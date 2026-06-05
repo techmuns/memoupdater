@@ -1,0 +1,6 @@
+# Local-only secrets for `vite dev` / `wrangler dev`. Copy to `.dev.vars`
+# and fill in real values. Never commit `.dev.vars`.
+#
+# Phase 2+ placeholders:
+# ANTHROPIC_API_KEY=
+# OPENAI_API_KEY=

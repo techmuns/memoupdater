@@ -1,0 +1,63 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "memo-updater",
+  "main": "./src/worker/index.ts",
+  "compatibility_date": "2026-06-05",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true
+  },
+  "upload_source_maps": true,
+
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  }
+
+  // ---------------------------------------------------------------
+  // Phase 2+ placeholders. Uncomment, then run `npm run cf-typegen`.
+  // ---------------------------------------------------------------
+  //
+  // "vars": {
+  //   "ENVIRONMENT": "production"
+  // },
+  //
+  // R2: store uploaded memos, financial PDFs, transcripts
+  // "r2_buckets": [
+  //   { "binding": "MEMO_UPLOADS", "bucket_name": "memo-updater-uploads" }
+  // ],
+  //
+  // D1: persist projects, MemoDNA extractions, generation runs
+  // "d1_databases": [
+  //   {
+  //     "binding": "DB",
+  //     "database_name": "memo-updater-db",
+  //     "database_id": "REPLACE_ME"
+  //   }
+  // ],
+  //
+  // Queues: async LLM extraction / generation pipeline
+  // "queues": {
+  //   "producers": [
+  //     { "binding": "MEMO_QUEUE", "queue": "memo-jobs" }
+  //   ],
+  //   "consumers": [
+  //     { "queue": "memo-jobs", "max_batch_size": 1 }
+  //   ]
+  // },
+  //
+  // Workflows: durable multi-step memo generation
+  // "workflows": [
+  //   {
+  //     "binding": "MEMO_WORKFLOW",
+  //     "name": "memo-workflow",
+  //     "class_name": "MemoWorkflow"
+  //   }
+  // ]
+  //
+  // Secrets (set with `wrangler secret put`, never committed):
+  //   ANTHROPIC_API_KEY
+  //   OPENAI_API_KEY
+}
