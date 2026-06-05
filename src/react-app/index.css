@@ -1,27 +1,70 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #fafaf7;
+  /* Neutral ramp — warm */
+  --color-paper: #f6f4ee;
+  --color-bg: #faf8f3;
   --color-surface: #ffffff;
-  --color-surface-muted: #f5f4ef;
-  --color-border: #e7e5df;
-  --color-border-strong: #d3d0c7;
-  --color-text: #1a1d23;
-  --color-text-muted: #6b7280;
-  --color-text-subtle: #9ca3af;
-  --color-accent: #0f4c75;
-  --color-accent-hover: #0d3f63;
-  --color-accent-soft: #e7eef4;
-  --color-warning: #b45309;
-  --color-warning-soft: #fef3c7;
-  --color-success: #047857;
-  --color-success-soft: #d1fae5;
+  --color-surface-muted: #f4f2ec;
+  --color-surface-sunken: #ece9e0;
+
+  --color-border: #e6e2d6;
+  --color-border-strong: #cfcabb;
+  --color-border-ink: #1f2937;
+
+  --color-text: #0e1420;
+  --color-text-muted: #5a6473;
+  --color-text-subtle: #8d97a6;
+  --color-text-inverse: #ffffff;
+
+  /* Primary — ink navy (was a brighter blue; redesigned to ink) */
+  --color-ink: #0a2540;
+  --color-ink-hover: #061a30;
+  --color-ink-soft: #e6ecf3;
+  --color-ink-foreground: #ffffff;
+
+  /* Backwards-compatible alias so existing accent usage still resolves */
+  --color-accent: #0a2540;
+  --color-accent-hover: #061a30;
+  --color-accent-soft: #e6ecf3;
+
+  /* Signal colors — restrained */
+  --color-signal-up: #0f7a4c;
+  --color-signal-up-soft: #e1f2e8;
+  --color-signal-down: #b42318;
+  --color-signal-down-soft: #fbe7e4;
+  --color-signal-flat: #6b6657;
+  --color-signal-flat-soft: #efece4;
+
+  --color-warning: #92510a;
+  --color-warning-soft: #fbedd2;
+  --color-success: #0f7a4c;
+  --color-success-soft: #e1f2e8;
+
+  /* Elevation */
+  --shadow-hairline: 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.02);
+  --shadow-md:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.05);
+  --shadow-panel:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
 
   --font-sans:
-    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+    "Inter", "InterVariable", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-serif:
-    ui-serif, "Iowan Old Style", "Apple Garamond", Baskerville, Georgia, serif;
+    "Source Serif Pro", "Iowan Old Style", "Apple Garamond", Baskerville,
+    Georgia, ui-serif, serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 }
 
 html,
@@ -37,12 +80,82 @@ body {
   font-family: var(--font-sans);
   font-feature-settings:
     "cv11" on,
-    "ss01" on;
+    "ss01" on,
+    "tnum" on,
+    "cv02" on;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Subtle paper grain — kept inline as a base64 SVG so no extra asset ships */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.06 0 0 0 0 0.08 0 0 0 0 0.12 0 0 0 0.05 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
 ::selection {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+  background: var(--color-ink-soft);
+  color: var(--color-ink);
+}
+
+/* Tabular numerals utility — useful in tables and financial readouts */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" on;
+}
+
+.serif {
+  font-family: var(--font-serif);
+}
+
+/* Hairline divider used between sections of the memo reader */
+.hairline {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--color-border) 12%,
+    var(--color-border) 88%,
+    transparent
+  );
+}
+
+/* Faint grid pattern reserved for hero/empty panels — opt-in via .grid-bg */
+.grid-bg {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--color-ink) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-ink) 5%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 28px 28px;
+  background-position: -1px -1px;
+}
+
+/* Scroll-spy nav button helper */
+.nav-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-border-strong);
+  transition: background 0.15s ease;
+}
+.nav-dot[data-active="true"] {
+  background: var(--color-ink);
 }

@@ -6,60 +6,90 @@ import {
   Hammer,
   FileOutput,
   Settings as SettingsIcon,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 
-const NAV = [
+const WORKFLOW = [
   { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/intake", label: "Intake", icon: Inbox },
   { to: "/memo-dna", label: "Memo DNA", icon: Fingerprint },
   { to: "/builder", label: "Builder", icon: Hammer },
   { to: "/output", label: "Output", icon: FileOutput },
-  { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
+
+const SYSTEM = [{ to: "/settings", label: "Settings", icon: SettingsIcon }];
 
 export function Sidebar() {
   return (
-    <aside className="w-60 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col">
-      <div className="px-6 h-16 flex items-center gap-2 border-b border-[var(--color-border)]">
-        <div className="w-7 h-7 rounded-md bg-[var(--color-accent)] flex items-center justify-center text-white font-semibold text-sm">
-          M
-        </div>
-        <div className="leading-tight">
-          <div className="text-sm font-semibold tracking-tight">
-            Memo Updater
-          </div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-subtle)]">
-            Buy-side research
-          </div>
-        </div>
-      </div>
-
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        {NAV.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
-                isActive
-                  ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]",
-              )
-            }
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </NavLink>
-        ))}
+    <aside className="w-56 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col">
+      <nav className="flex-1 px-3 pt-5 pb-3 flex flex-col gap-6 overflow-y-auto">
+        <NavGroup title="Workflow" items={WORKFLOW} />
+        <NavGroup title="System" items={SYSTEM} />
       </nav>
 
-      <div className="px-4 py-3 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-subtle)] leading-relaxed">
-        Phase 1 · Demo data only. Real parsing and LLM generation arrive in
-        Phase 2.
+      <div className="mx-3 mb-3 p-3 rounded-[var(--radius-md)] bg-[var(--color-surface-muted)] border border-[var(--color-border)]">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-ink)]">
+          <ShieldCheck className="w-3 h-3" />
+          Phase 1 · Demo
+        </div>
+        <div className="text-[11px] text-[var(--color-text-muted)] mt-1 leading-snug">
+          Mock RateGain data only. Real parsing, LLM generation, and persistence
+          land in Phase 2.
+        </div>
       </div>
     </aside>
+  );
+}
+
+function NavGroup({
+  title,
+  items,
+}: {
+  title: string;
+  items: typeof WORKFLOW;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-subtle)]">
+        {title}
+      </div>
+      {items.map(({ to, label, icon: Icon, end }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={end}
+          className={({ isActive }) =>
+            cn(
+              "group relative flex items-center gap-2.5 pl-3 pr-3 py-1.5 rounded-[var(--radius-md)] text-[13px] transition-colors",
+              isActive
+                ? "bg-[var(--color-ink-soft)] text-[var(--color-ink)] font-semibold"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]",
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full transition-colors",
+                  isActive ? "bg-[var(--color-ink)]" : "bg-transparent",
+                )}
+              />
+              <Icon
+                className={cn(
+                  "w-4 h-4 shrink-0 transition-colors",
+                  isActive
+                    ? "text-[var(--color-ink)]"
+                    : "text-[var(--color-text-subtle)] group-hover:text-[var(--color-text-muted)]",
+                )}
+              />
+              {label}
+            </>
+          )}
+        </NavLink>
+      ))}
+    </div>
   );
 }

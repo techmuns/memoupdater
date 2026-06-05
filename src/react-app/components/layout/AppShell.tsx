@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
-import { Topbar } from "./Topbar";
+import { CommandBar } from "./CommandBar";
 
 interface AppShellProps {
   children: ReactNode;
@@ -8,12 +8,12 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   return (
-    <div className="h-full flex bg-[var(--color-bg)]">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Topbar />
+    <div className="h-full flex flex-col bg-[var(--color-bg)]">
+      <CommandBar />
+      <div className="flex-1 flex min-h-0">
+        <Sidebar />
         <main className="flex-1 overflow-y-auto">
-          <div className="max-w-6xl mx-auto px-8 py-10">{children}</div>
+          <div className="max-w-[1320px] mx-auto px-8 py-8">{children}</div>
         </main>
       </div>
     </div>

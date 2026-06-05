@@ -19,21 +19,21 @@ export function SectionHeader({
   return (
     <div
       className={cn(
-        "flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3",
+        "flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between",
         className,
       )}
     >
-      <div>
+      <div className="min-w-0">
         {eyebrow && (
-          <div className="text-xs font-medium uppercase tracking-wider text-[var(--color-accent)] mb-1">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-ink)] mb-1.5">
             {eyebrow}
           </div>
         )}
-        <h1 className="text-2xl font-semibold text-[var(--color-text)] tracking-tight">
+        <h1 className="text-[22px] font-semibold text-[var(--color-text)] tracking-tight leading-tight">
           {title}
         </h1>
         {description && (
-          <p className="text-sm text-[var(--color-text-muted)] mt-1 max-w-2xl">
+          <p className="text-[13px] text-[var(--color-text-muted)] mt-1.5 max-w-2xl leading-relaxed">
             {description}
           </p>
         )}
