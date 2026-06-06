@@ -93,7 +93,7 @@ function detectCompany(text: string, filename: string): string | undefined {
 }
 
 const THESIS_HEADING =
-  /^(?:\s*#+\s*)?(?:investment\s+thesis|thesis|summary|investment\s+case|view|our\s+view|recommendation)\s*[:\-]?\s*$/im;
+  /^(?:\s*#+\s*)?(?:investment\s+thesis|thesis|summary|investment\s+case|view|our\s+view|recommendation)\s*[:-]?\s*$/im;
 
 function detectThesis(
   text: string,

@@ -50,8 +50,6 @@ export function ExtractionPreview({
   }
 
   const isSuccess = status === "success" || status === "partial";
-  const tone =
-    status === "success" ? "success" : status === "partial" ? "warning" : "down";
 
   return (
     <Panel
