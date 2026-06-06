@@ -1,42 +1,26 @@
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, AlertCircle, Quote } from "lucide-react";
-import { api } from "../lib/api";
-import type { MemoDNA } from "@shared/types";
+import { ArrowRight, Quote, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Panel } from "../components/ui/Panel";
 import { ThesisMap } from "../components/ui/ThesisMap";
+import { useMemoProject } from "../state/MemoProjectContext";
 
 export function MemoDnaPage() {
   const navigate = useNavigate();
-  const [dna, setDna] = useState<MemoDNA | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .demoMemoDna()
-      .then(setDna)
-      .catch((e) => setError(String(e)));
-  }, []);
-
-  if (error) {
-    return (
-      <EmptyState
-        icon={<AlertCircle className="w-8 h-8" />}
-        title="Could not load demo DNA"
-        description={error}
-      />
-    );
-  }
+  const { currentDna, currentMode, state, setMode, resetExtracted } =
+    useMemoProject();
+  const dna = currentDna;
+  const isExtracted = currentMode === "extracted" && state.extractedDna;
+  const hasBothModes = Boolean(state.extractedDna && state.demoDna);
 
   if (!dna) {
     return (
       <EmptyState
-        title="Loading demo DNA…"
-        description="Fetching /api/demo/memo-dna"
+        title="Loading Memo DNA…"
+        description="Fetching demo extraction"
       />
     );
   }
@@ -45,8 +29,16 @@ export function MemoDnaPage() {
     <div className="space-y-7">
       <SectionHeader
         eyebrow="Step 2 · Memo DNA"
-        title="Extracted memo DNA"
-        description="The structural fingerprint of the original memo — thesis, assumptions, voice, valuation logic, and what to re-test in the next quarter."
+        title={
+          isExtracted
+            ? "Extracted Memo DNA from uploaded memo"
+            : "Demo Memo DNA"
+        }
+        description={
+          isExtracted
+            ? `Heuristic v0 fingerprint derived from ${state.extraction?.source.filename ?? "your uploaded memo"}.`
+            : "The structural fingerprint of the RateGain reference memo — thesis, assumptions, voice, valuation logic, and what to re-test."
+        }
         actions={
           <Button
             onClick={() => navigate("/builder")}
@@ -57,35 +49,78 @@ export function MemoDnaPage() {
         }
       />
 
-      <div className="flex items-center gap-2">
-        <Badge tone="warning" dot>
-          Demo extraction
-        </Badge>
+      <div className="flex items-center gap-2 flex-wrap">
+        {isExtracted ? (
+          <Badge tone="success" dot>
+            Extracted · Heuristic v0
+          </Badge>
+        ) : (
+          <Badge tone="warning" dot>
+            Demo Memo DNA
+          </Badge>
+        )}
         <span className="text-[12px] text-[var(--color-text-muted)]">
-          Real LLM-driven parsing arrives in Phase 2. Current data is
-          deterministic and sourced from the RateGain demo project.
+          {isExtracted
+            ? "Rule-based extraction. Real LLM extraction lands in Phase 3."
+            : "Mock RateGain DNA. Upload a memo on Intake to switch into extracted mode."}
         </span>
+        {hasBothModes && (
+          <div className="ml-auto inline-flex rounded-[var(--radius-md)] border border-[var(--color-border)] overflow-hidden text-[11px] font-semibold">
+            <button
+              onClick={() => setMode("demo")}
+              className={`px-2.5 py-1 ${
+                currentMode === "demo"
+                  ? "bg-[var(--color-ink)] text-white"
+                  : "bg-[var(--color-surface)] text-[var(--color-text-muted)]"
+              }`}
+            >
+              Demo
+            </button>
+            <button
+              onClick={() => setMode("extracted")}
+              className={`px-2.5 py-1 ${
+                currentMode === "extracted"
+                  ? "bg-[var(--color-ink)] text-white"
+                  : "bg-[var(--color-surface)] text-[var(--color-text-muted)]"
+              }`}
+            >
+              Extracted
+            </button>
+          </div>
+        )}
+        {state.extractedDna && (
+          <button
+            onClick={resetExtracted}
+            className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-ink)] hover:text-[var(--color-ink-hover)]"
+          >
+            <RefreshCw className="w-3 h-3" /> Reset to demo
+          </button>
+        )}
       </div>
 
       {/* Scorecard strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Scorecard
-          label="Recurring rev mix"
-          value="≥85% by FY27"
-          hint="Mix shift to MarTech drags ARR quality up"
-          tone="up"
+          label="Mode"
+          value={isExtracted ? "Live extraction" : "Demo data"}
+          hint={
+            isExtracted
+              ? state.extraction?.source.filename
+              : "RateGain reference"
+          }
+          tone={isExtracted ? "up" : "accent"}
         />
         <Scorecard
-          label="ARR growth"
-          value=">25% YoY"
-          hint="MarTech 30%+ pulls blended growth"
-          tone="up"
+          label="Thesis checkpoints"
+          value={`${dna.thesisCheckpoints.length}`}
+          hint="Tracked to re-test"
+          tone="accent"
         />
         <Scorecard
-          label="Rule of 40"
-          value="≥35 by Q4 FY27"
-          hint="Single number we track"
-          tone="up"
+          label="Risk categories"
+          value={`${dna.riskChecklist.length}`}
+          hint="Surfaced by heuristic"
+          tone="accent"
         />
         <Scorecard
           label="Target multiple"
@@ -99,7 +134,7 @@ export function MemoDnaPage() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         <Panel
           eyebrow="Original thesis"
-          title="What the original memo argues"
+          title="What the memo argues"
           className="lg:col-span-3"
         >
           <p
@@ -167,14 +202,8 @@ export function MemoDnaPage() {
           className="lg:col-span-2"
         >
           <div className="grid grid-cols-2 gap-2 mb-4">
-            <MiniStat
-              k="Method"
-              v={dna.valuationFramework.method}
-            />
-            <MiniStat
-              k="Multiple"
-              v={dna.valuationFramework.targetMultiple}
-            />
+            <MiniStat k="Method" v={dna.valuationFramework.method} />
+            <MiniStat k="Multiple" v={dna.valuationFramework.targetMultiple} />
           </div>
           <BulletList items={dna.valuationFramework.bridgeNotes} compact />
         </Panel>
@@ -190,7 +219,14 @@ export function MemoDnaPage() {
           </span>
         }
       >
-        <ThesisMap checkpoints={dna.thesisCheckpoints} columns={2} />
+        {dna.thesisCheckpoints.length > 0 ? (
+          <ThesisMap checkpoints={dna.thesisCheckpoints} columns={2} />
+        ) : (
+          <p className="text-[12px] text-[var(--color-text-subtle)] italic">
+            Heuristic v0 did not detect explicit checkpoints. Real LLM
+            extraction in Phase 3 will pull every testable claim from the memo.
+          </p>
+        )}
       </Panel>
 
       {/* Open questions + risk retest */}

@@ -15,7 +15,7 @@ export interface UploadedDocument {
   kind: DocumentKind;
   filename: string;
   sizeBytes: number;
-  isDemo: true;
+  isDemo: boolean;
   uploadedAt: string;
 }
 
@@ -64,7 +64,7 @@ export interface MemoDNA {
     risks: string[];
   }[];
   thesisCheckpoints: ThesisCheckpoint[];
-  isDemo: true;
+  isDemo: boolean;
 }
 
 export interface UpdatePack {
@@ -89,7 +89,7 @@ export interface FollowUpMemo {
   title: string;
   generatedAt: string;
   sections: MemoSection[];
-  isDemo: true;
+  isDemo: boolean;
 }
 
 export type GenerationStepStatus = "not_started" | "ready" | "demo_generated";
@@ -122,4 +122,59 @@ export interface HealthResponse {
   status: "ok";
   phase: "1-demo";
   timestamp: string;
+}
+
+// ---------- Phase 2 additions ----------
+
+export type MemoAnalysisMode = "demo" | "extracted";
+
+export type ExtractionStatus =
+  | "idle"
+  | "extracting"
+  | "success"
+  | "partial"
+  | "unsupported"
+  | "error";
+
+export interface ExtractionResult {
+  status: ExtractionStatus;
+  text: string;
+  characterCount: number;
+  wordCount: number;
+  pageCount?: number;
+  warnings: string[];
+  errorMessage?: string;
+  source: {
+    filename: string;
+    sizeBytes: number;
+    mime: string;
+    extension: string;
+  };
+  extractedAt: string;
+}
+
+export interface LocalUploadedFile {
+  id: string;
+  kind: DocumentKind;
+  filename: string;
+  sizeBytes: number;
+  mime: string;
+  extension: string;
+  uploadedAt: string;
+  extractionSupported: boolean;
+}
+
+export interface KeywordSignal {
+  phrase: string;
+  category: string;
+  weight: number;
+  hits: number;
+}
+
+export interface StyleSignal {
+  avgSentenceLength: number;
+  firstPersonRatio: number;
+  hedgeRatio: number;
+  bulletDensity: number;
+  numericalDensity: number;
 }

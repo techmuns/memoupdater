@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Play, Sparkles, ArrowRight, FileText } from "lucide-react";
 import { Button } from "../components/ui/Button";
@@ -7,12 +7,8 @@ import { SectionHeader } from "../components/ui/SectionHeader";
 import { Badge } from "../components/ui/Badge";
 import { Panel } from "../components/ui/Panel";
 import { ThesisMap } from "../components/ui/ThesisMap";
-import { api } from "../lib/api";
-import type {
-  FollowUpMemo,
-  GenerationStep,
-  ThesisCheckpoint,
-} from "@shared/types";
+import { useMemoProject } from "../state/MemoProjectContext";
+import type { GenerationStep } from "@shared/types";
 
 const INITIAL_STEPS: GenerationStep[] = [
   {
@@ -55,18 +51,16 @@ const INITIAL_STEPS: GenerationStep[] = [
 
 export function BuilderPage() {
   const navigate = useNavigate();
+  const { currentDna, currentMode, state } = useMemoProject();
   const [steps, setSteps] = useState<GenerationStep[]>(INITIAL_STEPS);
   const [running, setRunning] = useState(false);
-  const [memo, setMemo] = useState<FollowUpMemo | null>(null);
-  const [checkpoints, setCheckpoints] = useState<ThesisCheckpoint[]>([]);
 
-  useEffect(() => {
-    api.demoFollowUpMemo().then(setMemo).catch(() => {});
-    api
-      .demoMemoDna()
-      .then((d) => setCheckpoints(d.thesisCheckpoints))
-      .catch(() => {});
-  }, []);
+  const checkpoints = currentDna?.thesisCheckpoints ?? [];
+  const memo = state.demoFollowUpMemo;
+  const isExtracted = currentMode === "extracted" && state.extractedDna;
+  const anchorLabel = isExtracted
+    ? state.extraction?.source.filename ?? "Extracted memo"
+    : "Demo memo";
 
   const allDemoGenerated = steps.every((s) => s.status === "demo_generated");
   const completedCount = steps.filter(
@@ -91,7 +85,7 @@ export function BuilderPage() {
       <SectionHeader
         eyebrow="Step 3 · Builder"
         title="Follow-up memo workflow engine"
-        description="Three-column cockpit. Pipeline left, thesis checkpoint mapping center, memo assembly preview right. Drive the demo run from the pipeline header."
+        description="Three-column cockpit. Pipeline left, thesis checkpoint mapping center, memo assembly preview right. Checkpoints come from whichever DNA is active — demo or extracted."
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -117,13 +111,16 @@ export function BuilderPage() {
         }
       />
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Badge tone="warning" dot>
           Demo workflow
         </Badge>
         <span className="text-[12px] text-[var(--color-text-muted)]">
-          Real generation (Queues + Workflows + LLM) arrives in Phase 2.
+          Real LLM-driven generation lands in Phase 3.
         </span>
+        <Badge tone={isExtracted ? "success" : "accent"}>
+          Anchored on: {anchorLabel}
+        </Badge>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -168,7 +165,7 @@ export function BuilderPage() {
                 <button
                   disabled
                   className="text-[var(--color-text-subtle)] opacity-50 cursor-not-allowed pt-1"
-                  title="Phase 2"
+                  title="Phase 3"
                 >
                   <Play className="w-3.5 h-3.5" />
                 </button>
@@ -191,14 +188,12 @@ export function BuilderPage() {
           className="lg:col-span-4"
         >
           {checkpoints.length > 0 ? (
-            <ThesisMap
-              checkpoints={checkpoints}
-              columns={1}
-              compact
-            />
+            <ThesisMap checkpoints={checkpoints} columns={1} compact />
           ) : (
             <div className="text-[12px] text-[var(--color-text-subtle)] italic">
-              Loading thesis checkpoints…
+              No checkpoints in the active DNA. Heuristic v0 didn't find
+              testable assumptions — try a richer memo or fall back to demo
+              mode on the Memo DNA screen.
             </div>
           )}
         </Panel>

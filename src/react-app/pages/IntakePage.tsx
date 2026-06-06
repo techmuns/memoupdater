@@ -11,14 +11,17 @@ import {
   Fingerprint,
   Hammer,
   FileCheck2,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { UploadSlot } from "../components/ui/UploadSlot";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { Badge } from "../components/ui/Badge";
 import { Panel } from "../components/ui/Panel";
+import { ExtractionPreview } from "../components/ui/ExtractionPreview";
 import { demoProject } from "@shared/demo/rategain-project";
 import type { DocumentKind } from "@shared/types";
+import { useMemoProject } from "../state/MemoProjectContext";
 
 const UPDATE_SLOTS: {
   kind: DocumentKind;
@@ -84,15 +87,37 @@ const NEXT_STEPS = [
 
 export function IntakePage() {
   const navigate = useNavigate();
+  const {
+    state,
+    setUpload,
+    extractInitialMemo,
+    buildDnaFromCurrentExtraction,
+    resetExtracted,
+  } = useMemoProject();
   const demoByKind = new Map(demoProject.uploads.map((u) => [u.kind, u]));
   const initialMemoDemo = demoByKind.get("initial_memo");
+  const initialUpload = state.uploads.initial_memo ?? null;
+  const isLive = Boolean(state.extraction);
+
+  const handleInitialPick = async (file: File) => {
+    await extractInitialMemo(file);
+  };
+
+  const handleUpdatePick = (kind: DocumentKind) => (file: File) => {
+    setUpload(kind, file);
+  };
+
+  const handleGenerateDna = () => {
+    const dna = buildDnaFromCurrentExtraction();
+    if (dna) navigate("/memo-dna");
+  };
 
   return (
     <div className="space-y-7">
       <SectionHeader
         eyebrow="Step 1 · Intake"
         title="Upload control room"
-        description="Drop the canonical memo on the left; load the latest update pack on the right. Phase 1 stores nothing — files stay in your browser."
+        description="Drop the canonical memo on the left; load the latest update pack on the right. Phase 2 extracts the initial memo's text right in your browser — files never leave the page."
         actions={
           <Button
             variant="secondary"
@@ -104,14 +129,34 @@ export function IntakePage() {
         }
       />
 
-      <div className="flex items-center gap-2">
-        <Badge tone="warning" dot>
-          Local demo mode
-        </Badge>
-        <span className="text-[12px] text-[var(--color-text-muted)]">
-          No files are saved yet. Real R2 storage and signed uploads arrive in
-          Phase 2.
-        </span>
+      <div className="flex items-center gap-2 flex-wrap">
+        {isLive ? (
+          <>
+            <Badge tone="success" dot>
+              Live extracted memo loaded
+            </Badge>
+            <span className="text-[12px] text-[var(--color-text-muted)]">
+              The dashboard is now reading from your uploaded memo. Demo data
+              remains as a fallback.
+            </span>
+            <button
+              onClick={resetExtracted}
+              className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-ink)] hover:text-[var(--color-ink-hover)]"
+            >
+              <RefreshCw className="w-3 h-3" /> Switch back to demo
+            </button>
+          </>
+        ) : (
+          <>
+            <Badge tone="warning" dot>
+              Local demo mode
+            </Badge>
+            <span className="text-[12px] text-[var(--color-text-muted)]">
+              Files are not yet saved to cloud storage. Real R2 storage and
+              signed uploads arrive in a later phase.
+            </span>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
@@ -120,22 +165,34 @@ export function IntakePage() {
             variant="primary"
             icon={FileText}
             title="Initial investment memo"
-            description="The original house-style memo that defines voice, thesis, analytical framework, and valuation logic. Everything downstream is anchored on this document."
+            description="The original house-style memo that defines voice, thesis, analytical framework, and valuation logic. Drop a .txt, .md, or .pdf — the dashboard extracts text and builds a Memo DNA draft."
             demoFilename={initialMemoDemo?.filename}
+            currentFile={initialUpload}
+            onFileSelected={handleInitialPick}
           />
 
-          <Panel
-            eyebrow="Why this matters"
-            title="The initial memo is the source of truth"
-            tone="tinted"
-          >
-            <p className="text-[12.5px] text-[var(--color-text-muted)] leading-relaxed">
-              Every later screen pulls from this. The follow-up memo will mirror
-              the same section order, the same skepticism, the same valuation
-              method, and the same position-sizing logic. Choose the memo that
-              best represents your house voice.
-            </p>
-          </Panel>
+          <ExtractionPreview
+            status={state.extractionStatus}
+            result={state.extraction}
+            onGenerateDna={handleGenerateDna}
+            onReset={resetExtracted}
+            generatedDnaPending={Boolean(state.extractedDna)}
+          />
+
+          {!isLive && (
+            <Panel
+              eyebrow="Why this matters"
+              title="The initial memo is the source of truth"
+              tone="tinted"
+            >
+              <p className="text-[12.5px] text-[var(--color-text-muted)] leading-relaxed">
+                Every later screen pulls from this. The follow-up memo will
+                mirror the same section order, the same skepticism, the same
+                valuation method, and the same position-sizing logic. Drop your
+                house memo to switch the dashboard out of demo mode.
+              </p>
+            </Panel>
+          )}
         </div>
 
         <div className="lg:col-span-2 flex flex-col">
@@ -144,20 +201,29 @@ export function IntakePage() {
             title="Re-test material"
             actions={
               <Badge tone="ink">
-                {UPDATE_SLOTS.length} / {UPDATE_SLOTS.length}
+                {Object.values(state.uploads).filter((u) => u && u.kind !== "initial_memo").length} / {UPDATE_SLOTS.length}
               </Badge>
             }
             bodyClassName="space-y-2"
           >
-            {UPDATE_SLOTS.map((slot) => (
-              <UploadSlot
-                key={slot.kind}
-                title={slot.title}
-                description={slot.description}
-                icon={slot.icon}
-                demoFilename={demoByKind.get(slot.kind)?.filename}
-              />
-            ))}
+            {UPDATE_SLOTS.map((slot) => {
+              const current = state.uploads[slot.kind] ?? null;
+              return (
+                <UploadSlot
+                  key={slot.kind}
+                  title={slot.title}
+                  description={slot.description}
+                  icon={slot.icon}
+                  demoFilename={demoByKind.get(slot.kind)?.filename}
+                  currentFile={current}
+                  onFileSelected={handleUpdatePick(slot.kind)}
+                />
+              );
+            })}
+            <div className="pt-2 mt-1 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-subtle)] leading-snug">
+              Update Pack uploads store metadata locally only. Real parsing
+              lands in a later phase.
+            </div>
           </Panel>
         </div>
       </div>
