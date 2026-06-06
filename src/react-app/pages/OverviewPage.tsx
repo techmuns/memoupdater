@@ -25,10 +25,12 @@ export function OverviewPage() {
   const navigate = useNavigate();
   const { currentDna, currentMode, state } = useMemoProject();
 
-  const uploadEntries = Object.values(state.uploads).filter((u) => u);
+  const uploadEntries = Object.values(state.uploads).filter(
+    (u): u is NonNullable<typeof u> => Boolean(u),
+  );
   const uploadCount = uploadEntries.length;
   const updatePackCount = uploadEntries.filter(
-    (u) => u && u.kind !== "initial_memo",
+    (u) => u.kind !== "initial_memo",
   ).length;
   const totalUpdateSlots = 6;
   const hasExtraction = Boolean(state.extraction);
@@ -149,7 +151,11 @@ export function OverviewPage() {
           <SignalCard
             icon={Compass}
             eyebrow="Original Thesis Map"
-            title={isLive ? "Extracted thesis anchors" : "Buy-side conviction anchors"}
+            title={
+              isLive
+                ? "Extracted thesis anchors"
+                : "Buy-side conviction anchors"
+            }
             footer={
               <button
                 onClick={() => navigate("/memo-dna")}
@@ -173,7 +179,9 @@ export function OverviewPage() {
                 ))}
               </ul>
             ) : (
-              <p className="text-[12px] italic">Loading thesis anchors…</p>
+              <p className="text-[12px] italic text-[var(--color-text-subtle)]">
+                Loading thesis anchors…
+              </p>
             )}
           </SignalCard>
 
@@ -202,20 +210,18 @@ export function OverviewPage() {
           >
             {uploadCount > 0 ? (
               <ul className="space-y-1.5 mt-1">
-                {uploadEntries.map((u) =>
-                  u ? (
-                    <li
-                      key={u.id}
-                      className="flex items-center gap-2 text-[12px] text-[var(--color-text-muted)]"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-success)]" />
-                      {describeKind(u.kind)}
-                      <span className="text-[var(--color-text-subtle)] truncate">
-                        · {u.filename}
-                      </span>
-                    </li>
-                  ) : null,
-                )}
+                {uploadEntries.map((u) => (
+                  <li
+                    key={u.id}
+                    className="flex items-center gap-2 text-[12px] text-[var(--color-text-muted)]"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-success)]" />
+                    {describeKind(u.kind)}
+                    <span className="text-[var(--color-text-subtle)] truncate">
+                      · {u.filename}
+                    </span>
+                  </li>
+                ))}
               </ul>
             ) : (
               <ul className="space-y-1.5 mt-1">
