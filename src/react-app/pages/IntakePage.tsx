@@ -22,6 +22,7 @@ import { ExtractionPreview } from "../components/ui/ExtractionPreview";
 import { demoProject } from "@shared/demo/rategain-project";
 import type { DocumentKind } from "@shared/types";
 import { useMemoProject } from "../state/MemoProjectContext";
+import { describeKind } from "../lib/fileMeta";
 
 const UPDATE_SLOTS: {
   kind: DocumentKind;
@@ -89,8 +90,8 @@ export function IntakePage() {
   const navigate = useNavigate();
   const {
     state,
-    setUpload,
     extractInitialMemo,
+    extractUpdateDoc,
     buildDnaFromCurrentExtraction,
     resetExtracted,
   } = useMemoProject();
@@ -99,12 +100,25 @@ export function IntakePage() {
   const initialUpload = state.uploads.initial_memo ?? null;
   const isLive = Boolean(state.extraction);
 
+  const uploadedUpdateCount = UPDATE_SLOTS.filter(
+    (s) => state.uploads[s.kind],
+  ).length;
+  const extractedUpdateCount = UPDATE_SLOTS.filter((s) => {
+    const st = state.updateExtractions[s.kind]?.status;
+    return st === "success" || st === "partial";
+  }).length;
+  const unsupportedUpdateCount = UPDATE_SLOTS.filter((s) => {
+    if (!state.uploads[s.kind]) return false;
+    const st = state.updateExtractions[s.kind]?.status;
+    return st === "unsupported" || st === "error";
+  }).length;
+
   const handleInitialPick = async (file: File) => {
     await extractInitialMemo(file);
   };
 
-  const handleUpdatePick = (kind: DocumentKind) => (file: File) => {
-    setUpload(kind, file);
+  const handleUpdatePick = (kind: DocumentKind) => async (file: File) => {
+    await extractUpdateDoc(kind, file);
   };
 
   const handleGenerateDna = () => {
@@ -117,7 +131,7 @@ export function IntakePage() {
       <SectionHeader
         eyebrow="Step 1 · Intake"
         title="Upload control room"
-        description="Drop the canonical memo on the left; load the latest update pack on the right. Phase 2 extracts the initial memo's text right in your browser — files never leave the page."
+        description="Drop the canonical memo on the left; load the latest update pack on the right. Every file is parsed in your browser — nothing is uploaded to the cloud."
         actions={
           <Button
             variant="secondary"
@@ -129,7 +143,7 @@ export function IntakePage() {
         }
       />
 
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-start gap-2 flex-wrap">
         {isLive ? (
           <>
             <Badge tone="success" dot>
@@ -139,12 +153,19 @@ export function IntakePage() {
               The dashboard is now reading from your uploaded memo. Demo data
               remains as a fallback.
             </span>
-            <button
-              onClick={resetExtracted}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-ink)] hover:text-[var(--color-ink-hover)]"
-            >
-              <RefreshCw className="w-3 h-3" /> Switch back to demo
-            </button>
+            <div className="flex flex-col items-start">
+              <button
+                onClick={resetExtracted}
+                className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-ink)] hover:text-[var(--color-ink-hover)]"
+              >
+                <RefreshCw className="w-3 h-3" /> Switch back to demo
+              </button>
+              <span className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-snug max-w-md">
+                Clears your uploaded initial memo, extracted DNA, all
+                update-pack uploads + extractions, and the generated
+                follow-up memo.
+              </span>
+            </div>
           </>
         ) : (
           <>
@@ -152,8 +173,7 @@ export function IntakePage() {
               Local demo mode
             </Badge>
             <span className="text-[12px] text-[var(--color-text-muted)]">
-              Files are not yet saved to cloud storage. Real R2 storage and
-              signed uploads arrive in a later phase.
+              Files are parsed in your browser and not saved to cloud.
             </span>
           </>
         )}
@@ -201,28 +221,43 @@ export function IntakePage() {
             title="Re-test material"
             actions={
               <Badge tone="ink">
-                {Object.values(state.uploads).filter((u) => u && u.kind !== "initial_memo").length} / {UPDATE_SLOTS.length}
+                {uploadedUpdateCount}/{UPDATE_SLOTS.length} uploaded ·{" "}
+                {extractedUpdateCount} extracted · {unsupportedUpdateCount}{" "}
+                unsupported
               </Badge>
             }
             bodyClassName="space-y-2"
           >
             {UPDATE_SLOTS.map((slot) => {
               const current = state.uploads[slot.kind] ?? null;
+              const ex = state.updateExtractions[slot.kind] ?? null;
+              const exStatus =
+                state.updateExtractionStatuses[slot.kind] ?? "idle";
               return (
-                <UploadSlot
-                  key={slot.kind}
-                  title={slot.title}
-                  description={slot.description}
-                  icon={slot.icon}
-                  demoFilename={demoByKind.get(slot.kind)?.filename}
-                  currentFile={current}
-                  onFileSelected={handleUpdatePick(slot.kind)}
-                />
+                <div key={slot.kind} className="space-y-2">
+                  <UploadSlot
+                    title={slot.title}
+                    description={slot.description}
+                    icon={slot.icon}
+                    demoFilename={demoByKind.get(slot.kind)?.filename}
+                    currentFile={current}
+                    onFileSelected={handleUpdatePick(slot.kind)}
+                  />
+                  {current && (
+                    <ExtractionPreview
+                      status={exStatus}
+                      result={ex}
+                      variant="compact"
+                      label={`${describeKind(slot.kind)} · extracted preview`}
+                    />
+                  )}
+                </div>
               );
             })}
             <div className="pt-2 mt-1 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-subtle)] leading-snug">
-              Update Pack uploads store metadata locally only. Real parsing
-              lands in a later phase.
+              Update Pack uploads are extracted in your browser. .txt, .md,
+              and .pdf are supported; .xlsx and .docx are recognized as
+              unsupported (xlsx parsing lands later).
             </div>
           </Panel>
         </div>

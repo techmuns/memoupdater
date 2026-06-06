@@ -77,11 +77,18 @@ export interface UpdatePack {
   marketData?: UploadedDocument[];
 }
 
+// Forward declaration so MemoSection.signal resolves textually as well as via TS hoisting.
+export type MemoSectionSignal = "positive" | "neutral" | "negative" | "watch";
+
 export interface MemoSection {
   id: string;
   title: string;
   body: string;
   sources: SourceReference[];
+  summary?: string;
+  bullets?: string[];
+  signal?: MemoSectionSignal;
+  confidenceNote?: string;
 }
 
 export interface FollowUpMemo {
@@ -177,4 +184,67 @@ export interface StyleSignal {
   hedgeRatio: number;
   bulletDensity: number;
   numericalDensity: number;
+}
+
+// ---------- Phase 3 additions ----------
+
+export type SignalPolarity = "positive" | "negative" | "neutral";
+
+export type UpdateSignalCategory =
+  | "financial_growth"
+  | "margin"
+  | "guidance"
+  | "management"
+  | "ma_integration"
+  | "recurring_quality"
+  | "valuation"
+  | "ai_macro_competitive"
+  | "unresolved_question";
+
+export interface DocumentSourceSnippet {
+  documentId: string;
+  kind: DocumentKind;
+  quote: string;
+  page?: number;
+}
+
+export interface UpdateSignal {
+  id: string;
+  category: UpdateSignalCategory;
+  polarity: SignalPolarity;
+  phrase: string;
+  weight: number;
+  documentKind: DocumentKind;
+  source: DocumentSourceSnippet;
+}
+
+export interface UpdatePackAnalysis {
+  signals: UpdateSignal[];
+  byCategory: Partial<Record<UpdateSignalCategory, UpdateSignal[]>>;
+  positiveCount: number;
+  negativeCount: number;
+  neutralCount: number;
+  netPolarityScore: number;
+  documentsAnalyzed: DocumentKind[];
+  unsupportedDocuments: DocumentKind[];
+}
+
+export type GeneratedMemoStatus =
+  | "missing_initial_memo"
+  | "missing_update_pack"
+  | "ready"
+  | "generated";
+
+export interface FollowUpMemoGenerationInput {
+  dna: MemoDNA;
+  analysis: UpdatePackAnalysis;
+  uploads: Partial<Record<DocumentKind, LocalUploadedFile>>;
+  generatedAt: string;
+}
+
+export interface FollowUpMemoGenerationResult {
+  memo: FollowUpMemo;
+  analysis: UpdatePackAnalysis;
+  overallSignal: MemoSectionSignal;
+  warnings: string[];
 }

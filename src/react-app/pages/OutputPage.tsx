@@ -4,34 +4,38 @@ import {
   FileDown,
   FileText,
   Save,
-  AlertCircle,
   Check,
 } from "lucide-react";
-import { api } from "../lib/api";
 import type { FollowUpMemo } from "@shared/types";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/EmptyState";
 import { SectionNavigator } from "../components/ui/SectionNavigator";
 import { SourcePanel } from "../components/ui/SourcePanel";
+import { useMemoProject } from "../state/MemoProjectContext";
+import { SIGNAL_BADGE_TONE, SIGNAL_LABEL } from "../lib/signalDisplay";
+
+type View = "generated" | "demo";
 
 export function OutputPage() {
-  const [memo, setMemo] = useState<FollowUpMemo | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { state } = useMemoProject();
+  const generated = state.generatedMemo;
+  const demo = state.demoFollowUpMemo;
+
+  const [view, setView] = useState<View>(() =>
+    generated && !state.generationError ? "generated" : "demo",
+  );
   const [copied, setCopied] = useState(false);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [scrolledId, setScrolledId] = useState<string | null>(null);
 
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
 
-  useEffect(() => {
-    api
-      .demoFollowUpMemo()
-      .then((m) => {
-        setMemo(m);
-        if (m.sections.length > 0) setActiveId(m.sections[0].id);
-      })
-      .catch((e) => setError(String(e)));
-  }, []);
+  // Pick the visible memo with a guaranteed fallback.
+  const memo: FollowUpMemo | null =
+    view === "generated" && generated ? generated : (demo ?? null);
+
+  // Derived active section id: observer-set value, or fall back to the first section.
+  const activeId = scrolledId ?? memo?.sections[0]?.id ?? null;
 
   useEffect(() => {
     if (!memo) return;
@@ -42,7 +46,7 @@ export function OutputPage() {
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
         if (visible[0]) {
           const id = visible[0].target.getAttribute("data-section-id");
-          if (id) setActiveId(id);
+          if (id) setScrolledId(id);
         }
       },
       { rootMargin: "-20% 0px -55% 0px", threshold: [0, 0.25, 0.5, 1] },
@@ -57,7 +61,16 @@ export function OutputPage() {
       memo.title,
       `Generated: ${memo.generatedAt}`,
       "",
-      ...memo.sections.flatMap((s, i) => [`${i + 1}. ${s.title}`, s.body, ""]),
+      ...memo.sections.flatMap((s, i) => {
+        const lines = [`${i + 1}. ${s.title}`];
+        if (s.summary) lines.push(s.summary);
+        if (s.body && s.body !== s.summary) lines.push(s.body);
+        if (s.bullets && s.bullets.length > 0) {
+          lines.push(...s.bullets.map((b) => `  • ${b}`));
+        }
+        lines.push("");
+        return lines;
+      }),
     ].join("\n");
   }, [memo]);
 
@@ -74,21 +87,11 @@ export function OutputPage() {
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  if (error) {
-    return (
-      <EmptyState
-        icon={<AlertCircle className="w-8 h-8" />}
-        title="Could not load follow-up memo"
-        description={error}
-      />
-    );
-  }
-
   if (!memo) {
     return (
       <EmptyState
-        title="Loading follow-up memo…"
-        description="Fetching /api/demo/follow-up-memo"
+        title="No memo to display yet"
+        description="Generate a follow-up memo on the Builder, or wait for the demo memo to load."
       />
     );
   }
@@ -98,21 +101,32 @@ export function OutputPage() {
     timeStyle: "short",
   });
 
+  const isGeneratedView = view === "generated" && generated;
+  const showToggle = Boolean(generated && demo);
+
   return (
     <div className="space-y-5">
       {/* Memo title bar */}
       <header className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-sm)] px-6 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--color-ink)] text-white tracking-wider">
-              RATEGAIN
+              {isGeneratedView ? "GENERATED" : "RATEGAIN"}
             </span>
             <span className="text-[11px] text-[var(--color-text-muted)]">
-              RateGain Travel Technologies · Generated {generatedDate}
+              {isGeneratedView
+                ? `Deterministic draft · Generated ${generatedDate}`
+                : `RateGain Travel Technologies · Generated ${generatedDate}`}
             </span>
-            <Badge tone="warning" dot>
-              Demo
-            </Badge>
+            {isGeneratedView ? (
+              <Badge tone="success" dot>
+                Generated Follow-up Memo v0
+              </Badge>
+            ) : (
+              <Badge tone="warning" dot>
+                Demo Follow-up Memo
+              </Badge>
+            )}
           </div>
           <h1
             className="text-[24px] font-semibold tracking-tight text-[var(--color-text)] mt-1"
@@ -120,8 +134,35 @@ export function OutputPage() {
           >
             {memo.title}
           </h1>
+          <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1">
+            Deterministic draft — LLM refinement to be added later.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {showToggle && (
+            <div className="inline-flex rounded-[var(--radius-sm)] border border-[var(--color-border)] overflow-hidden">
+              <button
+                onClick={() => setView("generated")}
+                className={`text-[11.5px] font-medium px-3 py-1.5 ${
+                  view === "generated"
+                    ? "bg-[var(--color-ink)] text-white"
+                    : "bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                }`}
+              >
+                Generated
+              </button>
+              <button
+                onClick={() => setView("demo")}
+                className={`text-[11.5px] font-medium px-3 py-1.5 border-l border-[var(--color-border)] ${
+                  view === "demo"
+                    ? "bg-[var(--color-ink)] text-white"
+                    : "bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                }`}
+              >
+                Demo
+              </button>
+            </div>
+          )}
           <Button
             variant="secondary"
             onClick={copy}
@@ -134,7 +175,7 @@ export function OutputPage() {
           <Button
             variant="outline"
             disabled
-            title="Coming in Phase 2"
+            title="Export not yet wired"
             leadingIcon={<FileDown className="w-4 h-4" />}
           >
             Export PDF
@@ -142,7 +183,7 @@ export function OutputPage() {
           <Button
             variant="outline"
             disabled
-            title="Coming in Phase 2"
+            title="Export not yet wired"
             leadingIcon={<FileText className="w-4 h-4" />}
           >
             Export Word
@@ -150,7 +191,7 @@ export function OutputPage() {
           <Button
             variant="outline"
             disabled
-            title="Coming in Phase 2"
+            title="Save not yet wired"
             leadingIcon={<Save className="w-4 h-4" />}
           >
             Save version
@@ -195,13 +236,46 @@ export function OutputPage() {
                 >
                   {section.title}
                 </h2>
+                {section.signal && (
+                  <Badge tone={SIGNAL_BADGE_TONE[section.signal]} dot>
+                    {SIGNAL_LABEL[section.signal]}
+                  </Badge>
+                )}
               </div>
-              <p
-                className="text-[15.5px] text-[var(--color-text)] leading-[1.7]"
-                style={{ fontFamily: "var(--font-serif)" }}
-              >
-                {section.body}
-              </p>
+              {section.summary && section.summary !== section.body && (
+                <p
+                  className="text-[15.5px] text-[var(--color-text)] leading-[1.7] font-medium mb-3"
+                  style={{ fontFamily: "var(--font-serif)" }}
+                >
+                  {section.summary}
+                </p>
+              )}
+              {section.body && (
+                <p
+                  className="text-[15.5px] text-[var(--color-text)] leading-[1.7]"
+                  style={{ fontFamily: "var(--font-serif)" }}
+                >
+                  {section.body}
+                </p>
+              )}
+              {section.bullets && section.bullets.length > 0 && (
+                <ul className="mt-3 space-y-1.5 list-disc pl-5">
+                  {section.bullets.map((b, bi) => (
+                    <li
+                      key={bi}
+                      className="text-[14px] text-[var(--color-text)] leading-[1.65]"
+                      style={{ fontFamily: "var(--font-serif)" }}
+                    >
+                      {b}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {section.confidenceNote && (
+                <p className="mt-3 text-[11px] italic text-[var(--color-text-subtle)]">
+                  {section.confidenceNote}
+                </p>
+              )}
             </section>
           ))}
         </article>

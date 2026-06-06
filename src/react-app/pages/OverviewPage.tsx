@@ -23,7 +23,7 @@ import { describeKind } from "../lib/fileMeta";
 
 export function OverviewPage() {
   const navigate = useNavigate();
-  const { currentDna, currentMode, state } = useMemoProject();
+  const { currentDna, currentMode, state, usableUpdateCount } = useMemoProject();
 
   const uploadEntries = Object.values(state.uploads).filter(
     (u): u is NonNullable<typeof u> => Boolean(u),
@@ -35,6 +35,13 @@ export function OverviewPage() {
   const totalUpdateSlots = 6;
   const hasExtraction = Boolean(state.extraction);
   const isLive = currentMode === "extracted" && state.extractedDna;
+  const hasGenerated = Boolean(state.generatedMemo);
+
+  const followupState: WorkflowStep["state"] = hasGenerated
+    ? "complete"
+    : isLive && usableUpdateCount > 0
+      ? "active"
+      : "upcoming";
 
   const steps: WorkflowStep[] = [
     {
@@ -60,7 +67,7 @@ export function OverviewPage() {
       index: 3,
       icon: Layers,
       title: "Update Pack",
-      input: `${updatePackCount} / ${totalUpdateSlots} loaded`,
+      input: `${updatePackCount} / ${totalUpdateSlots} loaded · ${usableUpdateCount} parsed`,
       output: "Re-test evidence",
       state:
         updatePackCount === totalUpdateSlots
@@ -75,8 +82,10 @@ export function OverviewPage() {
       icon: FileCheck2,
       title: "Follow-up Memo",
       input: "DNA + update pack",
-      output: "9-section memo in house voice",
-      state: "upcoming",
+      output: hasGenerated
+        ? "Follow-up Memo v0 generated"
+        : "9-section memo in house voice",
+      state: followupState,
     },
   ];
 
@@ -249,9 +258,13 @@ export function OverviewPage() {
           <SignalCard
             icon={Sparkles}
             eyebrow="Follow-up Output"
-            title="Demo memo ready"
+            title={hasGenerated ? "Follow-up Memo v0 generated" : "Demo memo ready"}
             metric="9"
-            metricSub="sections drafted in the house voice from the RateGain DNA"
+            metricSub={
+              hasGenerated
+                ? "sections composed deterministically from your update pack"
+                : "sections drafted in the house voice from the RateGain DNA"
+            }
             footer={
               <button
                 onClick={() => navigate("/output")}
@@ -266,16 +279,22 @@ export function OverviewPage() {
                 <span className="text-[11px] text-[var(--color-text-muted)]">
                   Status
                 </span>
-                <Badge tone="success" dot>
-                  Generated
-                </Badge>
+                {hasGenerated ? (
+                  <Badge tone="success" dot>
+                    Generated
+                  </Badge>
+                ) : (
+                  <Badge tone="warning" dot>
+                    Demo only
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-[var(--color-text-muted)]">
                   Voice
                 </span>
                 <span className="text-[11.5px] text-[var(--color-text)] font-medium">
-                  Beas-style · thesis-driven
+                  {hasGenerated ? "From your initial memo DNA" : "Beas-style · thesis-driven"}
                 </span>
               </div>
               <div className="flex items-center justify-between">

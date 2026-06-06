@@ -20,9 +20,11 @@ import { formatBytes } from "../../lib/fileMeta";
 interface ExtractionPreviewProps {
   status: ExtractionStatus;
   result: ExtractionResult | null;
-  onGenerateDna: () => void;
-  onReset: () => void;
+  onGenerateDna?: () => void;
+  onReset?: () => void;
   generatedDnaPending?: boolean;
+  variant?: "full" | "compact";
+  label?: string;
 }
 
 export function ExtractionPreview({
@@ -31,8 +33,11 @@ export function ExtractionPreview({
   onGenerateDna,
   onReset,
   generatedDnaPending,
+  variant = "full",
+  label,
 }: ExtractionPreviewProps) {
   const [expanded, setExpanded] = useState(false);
+  const compact = variant === "compact";
 
   if (status === "idle" || !result) {
     return null;
@@ -40,10 +45,13 @@ export function ExtractionPreview({
 
   if (status === "extracting") {
     return (
-      <Panel eyebrow="Extraction" title="Reading the initial memo">
+      <Panel
+        eyebrow="Extraction"
+        title={label ?? "Reading the initial memo"}
+      >
         <div className="flex items-center gap-3 text-[13px] text-[var(--color-text-muted)]">
           <Loader2 className="w-4 h-4 animate-spin text-[var(--color-ink)]" />
-          Extracting text in your browser… large PDFs may take a few seconds.
+          Extracting text in your browser…
         </div>
       </Panel>
     );
@@ -54,18 +62,20 @@ export function ExtractionPreview({
   return (
     <Panel
       eyebrow="Extraction"
-      title="Initial memo · extracted text preview"
+      title={label ?? "Initial memo · extracted text preview"}
       actions={
         <div className="flex items-center gap-1.5">
           <StatusBadge status={status} />
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onReset}
-            leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}
-          >
-            Reset
-          </Button>
+          {onReset && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onReset}
+              leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}
+            >
+              Reset
+            </Button>
+          )}
         </div>
       }
     >
@@ -136,26 +146,29 @@ export function ExtractionPreview({
             </button>
           )}
 
-          <div className="mt-5 pt-4 border-t border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="text-[12px] text-[var(--color-text-muted)] leading-relaxed max-w-md">
-              Heuristic v0 generates a deterministic Memo DNA draft from the
-              extracted text. Real LLM extraction lands in Phase 3.
+          {!compact && onGenerateDna && (
+            <div className="mt-5 pt-4 border-t border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="text-[12px] text-[var(--color-text-muted)] leading-relaxed max-w-md">
+                Heuristic v0 generates a deterministic Memo DNA draft from the
+                extracted text. Deterministic draft — LLM refinement to be
+                added later.
+              </div>
+              <Button
+                onClick={onGenerateDna}
+                disabled={generatedDnaPending}
+                leadingIcon={
+                  generatedDnaPending ? (
+                    <CheckCircle2 className="w-4 h-4" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )
+                }
+                trailingIcon={<ArrowRight className="w-4 h-4" />}
+              >
+                {generatedDnaPending ? "DNA generated" : "Generate Memo DNA"}
+              </Button>
             </div>
-            <Button
-              onClick={onGenerateDna}
-              disabled={generatedDnaPending}
-              leadingIcon={
-                generatedDnaPending ? (
-                  <CheckCircle2 className="w-4 h-4" />
-                ) : (
-                  <Sparkles className="w-4 h-4" />
-                )
-              }
-              trailingIcon={<ArrowRight className="w-4 h-4" />}
-            >
-              {generatedDnaPending ? "DNA generated" : "Generate Memo DNA"}
-            </Button>
-          </div>
+          )}
         </>
       )}
     </Panel>
