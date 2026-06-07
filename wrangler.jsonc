@@ -14,6 +14,32 @@
     "directory": "./dist/client",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
+  },
+
+  // ---------------------------------------------------------------
+  // Phase 4A: LLM follow-up memo generation. DEFAULT OFF for safety.
+  //
+  // To enable, set ALL of the following:
+  //   1. LLM_ENABLED = "true"     (in this file's "vars" block)
+  //   2. LLM_PROVIDER = "anthropic"
+  //   3. LLM_MODEL    = "claude-sonnet-4-6"  (or another supported id)
+  //   4. LLM_API_KEY  = <set as a secret, never committed>:
+  //        wrangler secret put LLM_API_KEY
+  //
+  // WARNING: this Worker has no auth or rate limiting. Enabling LLM
+  // generation on a public unauthenticated Worker can incur provider
+  // costs from arbitrary visitors. Protect with Cloudflare Access,
+  // WAF rules, or another access-control layer before flipping
+  // LLM_ENABLED to "true" in production.
+  //
+  // If LLM_ENABLED is not "true" OR any of provider/model/key is
+  // missing, /api/llm/status returns {configured:false} and the
+  // client silently falls back to the deterministic v0 generator.
+  // ---------------------------------------------------------------
+  "vars": {
+    "LLM_ENABLED": "false",
+    "LLM_PROVIDER": "anthropic",
+    "LLM_MODEL": "claude-sonnet-4-6"
   }
 
   // ---------------------------------------------------------------

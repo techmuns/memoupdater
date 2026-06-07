@@ -248,3 +248,91 @@ export interface FollowUpMemoGenerationResult {
   overallSignal: MemoSectionSignal;
   warnings: string[];
 }
+
+// ---------- Phase 4A additions: LLM follow-up memo generation ----------
+
+export type LlmProviderName = "anthropic" | "none";
+
+export interface LlmProviderMetadata {
+  providerName: LlmProviderName;
+  modelUsed: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+export interface LlmStatusResponse {
+  configured: boolean;
+  provider?: LlmProviderName;
+  model?: string;
+  fallbackAvailable: true;
+}
+
+export interface GenerateFollowUpMemoUpdateDoc {
+  id: string;
+  kind: DocumentKind;
+  filename: string;
+  text: string;
+}
+
+export interface GenerateFollowUpMemoRequest {
+  project: {
+    id: string;
+    ticker: string;
+    companyName: string;
+    sector?: string;
+  };
+  initialMemo: {
+    id?: string;
+    text: string;
+    sourceFilename: string;
+    sizeBytes: number;
+  };
+  updateDocs: GenerateFollowUpMemoUpdateDoc[];
+  dna: MemoDNA;
+  analysis: UpdatePackAnalysis;
+  generationOptions?: {
+    maxTokens?: number;
+  };
+}
+
+export type LlmGenerationErrorCode =
+  | "not_configured"
+  | "llm_error"
+  | "timeout"
+  | "malformed_output"
+  | "rate_limited";
+
+export interface LlmGenerationWarning {
+  code: LlmGenerationErrorCode | "schema_warning";
+  message: string;
+}
+
+export type GenerateFollowUpMemoResponse =
+  | {
+      ok: true;
+      memo: FollowUpMemo;
+      providerMetadata: LlmProviderMetadata;
+      warnings: LlmGenerationWarning[];
+    }
+  | {
+      ok: false;
+      code: LlmGenerationErrorCode;
+      message: string;
+      providerName?: LlmProviderName;
+      modelUsed?: string;
+      fallbackAvailable: true;
+    };
+
+export type FollowUpMemoSourceMode = "demo" | "deterministic" | "llm";
+
+export type LlmGenerationState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | {
+      kind: "success";
+      memo: FollowUpMemo;
+      providerMetadata: LlmProviderMetadata;
+      usedFallback: boolean;
+      warnings: LlmGenerationWarning[];
+    }
+  | { kind: "error"; error: string };

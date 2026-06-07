@@ -7,6 +7,8 @@ import {
   FileText,
   AlertCircle,
   RefreshCcw,
+  Bot,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { StatusChip } from "../components/ui/StatusChip";
@@ -61,6 +63,7 @@ export function BuilderPage() {
     generationStatus,
     usableUpdateCount,
     generateFollowUp,
+    generateLlmFollowUp,
   } = useMemoProject();
   const [busy, setBusy] = useState(false);
 
@@ -130,6 +133,11 @@ export function BuilderPage() {
     }
   };
 
+  const handleGenerateLlm = async () => {
+    await generateLlmFollowUp();
+    navigate("/output");
+  };
+
   const buttonDisabled =
     busy ||
     generationStatus === "missing_initial_memo" ||
@@ -142,8 +150,23 @@ export function BuilderPage() {
     return "Generate Follow-up Memo v0";
   })();
 
+  const llmConfigured = state.llmProviderStatus?.configured === true;
+  const llmLoading = state.llm.kind === "loading";
+  const llmHasSuccess = state.llm.kind === "success";
+  const llmButtonDisabled =
+    llmLoading ||
+    !llmConfigured ||
+    generationStatus === "missing_initial_memo" ||
+    generationStatus === "missing_update_pack";
+  const llmButtonLabel = (() => {
+    if (llmLoading) return "Generating LLM…";
+    if (llmHasSuccess) return "Regenerate LLM memo";
+    return "Generate LLM Memo v1";
+  })();
+
   const memo = state.generatedMemo ?? state.demoFollowUpMemo;
   const memoIsGenerated = Boolean(state.generatedMemo);
+  const anyUserMemoAvailable = memoIsGenerated || llmHasSuccess;
 
   return (
     <div className="space-y-7">
@@ -152,7 +175,7 @@ export function BuilderPage() {
         title="Follow-up memo workflow engine"
         description="Three-column cockpit. Pipeline left, thesis checkpoint mapping center, memo assembly preview right. Generation runs deterministically from the active DNA + extracted update-pack signals."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button
               onClick={handleGenerate}
               disabled={buttonDisabled}
@@ -167,9 +190,22 @@ export function BuilderPage() {
               {buttonLabel}
             </Button>
             <Button
+              variant="outline"
+              onClick={handleGenerateLlm}
+              disabled={llmButtonDisabled}
+              leadingIcon={<Bot className="w-4 h-4" />}
+              title={
+                llmConfigured
+                  ? undefined
+                  : "LLM generation is not configured on the server"
+              }
+            >
+              {llmButtonLabel}
+            </Button>
+            <Button
               variant="secondary"
               onClick={() => navigate("/output")}
-              disabled={!memoIsGenerated}
+              disabled={!anyUserMemoAvailable}
               trailingIcon={<ArrowRight className="w-4 h-4" />}
             >
               View output
@@ -180,13 +216,44 @@ export function BuilderPage() {
 
       <div className="flex items-center gap-2 flex-wrap">
         <StatusBadge status={generationStatus} hasError={Boolean(state.generationError)} />
-        <span className="text-[12px] text-[var(--color-text-muted)]">
-          Deterministic draft — LLM refinement to be added later.
-        </span>
         <Badge tone={isExtracted ? "success" : "accent"}>
           Anchored on: {anchorLabel}
         </Badge>
       </div>
+
+      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3 flex flex-col gap-1.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge tone={llmConfigured ? "success" : "neutral"} dot>
+            {llmConfigured
+              ? "LLM generation enabled"
+              : "LLM generation not configured"}
+          </Badge>
+          {llmConfigured && state.llmProviderStatus && (
+            <span className="text-[11px] text-[var(--color-text-muted)]">
+              {state.llmProviderStatus.provider} ·{" "}
+              {state.llmProviderStatus.model}
+            </span>
+          )}
+          <span className="text-[11px] text-[var(--color-text-subtle)] inline-flex items-center gap-1">
+            <ShieldCheck className="w-3 h-3" />
+            Deterministic v0 fallback is always available
+          </span>
+        </div>
+        <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug">
+          LLM Memo v1 sends extracted memo and update-pack text to the
+          configured LLM provider. Deterministic v0 stays local/browser-side.
+        </p>
+      </div>
+
+      {state.llm.kind === "error" && (
+        <div className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-signal-down)_22%,white)] bg-[var(--color-signal-down-soft)] px-4 py-3 flex gap-2 items-start">
+          <AlertCircle className="w-4 h-4 text-[var(--color-signal-down)] mt-0.5 shrink-0" />
+          <div className="text-[12.5px] text-[var(--color-signal-down)] leading-relaxed">
+            <span className="font-semibold">LLM generation failed:</span>{" "}
+            {state.llm.error}
+          </div>
+        </div>
+      )}
 
       {state.generationError && (
         <div className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-signal-down)_22%,white)] bg-[var(--color-signal-down-soft)] px-4 py-3 flex gap-2 items-start">

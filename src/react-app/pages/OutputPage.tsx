@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
+  Check,
   Copy,
   FileDown,
   FileText,
   Save,
-  Check,
 } from "lucide-react";
-import type { FollowUpMemo } from "@shared/types";
+import type { FollowUpMemo, FollowUpMemoSourceMode } from "@shared/types";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -15,26 +16,47 @@ import { SourcePanel } from "../components/ui/SourcePanel";
 import { useMemoProject } from "../state/MemoProjectContext";
 import { SIGNAL_BADGE_TONE, SIGNAL_LABEL } from "../lib/signalDisplay";
 
-type View = "generated" | "demo";
-
 export function OutputPage() {
   const { state } = useMemoProject();
   const generated = state.generatedMemo;
   const demo = state.demoFollowUpMemo;
+  const llmState = state.llm;
+  const llmMemo = llmState.kind === "success" ? llmState.memo : null;
+  const usedFallback = llmState.kind === "success" && llmState.usedFallback;
 
-  const [view, setView] = useState<View>(() =>
-    generated && !state.generationError ? "generated" : "demo",
-  );
+  // Initial selection: prefer LLM > deterministic > demo.
+  const [userView, setUserView] = useState<FollowUpMemoSourceMode>(() => {
+    if (llmMemo) return "llm";
+    if (generated && !state.generationError) return "deterministic";
+    return "demo";
+  });
   const [copied, setCopied] = useState(false);
   const [scrolledId, setScrolledId] = useState<string | null>(null);
 
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
 
-  // Pick the visible memo with a guaranteed fallback.
-  const memo: FollowUpMemo | null =
-    view === "generated" && generated ? generated : (demo ?? null);
+  // Derive the effective view from the user's selection plus availability.
+  // Falls through to the next available memo without setState in an effect.
+  const view: FollowUpMemoSourceMode =
+    userView === "llm" && llmMemo
+      ? "llm"
+      : userView === "deterministic" && generated
+        ? "deterministic"
+        : demo
+          ? "demo"
+          : llmMemo
+            ? "llm"
+            : generated
+              ? "deterministic"
+              : userView;
 
-  // Derived active section id: observer-set value, or fall back to the first section.
+  const memo: FollowUpMemo | null =
+    view === "llm" && llmMemo
+      ? llmMemo
+      : view === "deterministic" && generated
+        ? generated
+        : (demo ?? null);
+
   const activeId = scrolledId ?? memo?.sections[0]?.id ?? null;
 
   useEffect(() => {
@@ -101,8 +123,65 @@ export function OutputPage() {
     timeStyle: "short",
   });
 
-  const isGeneratedView = view === "generated" && generated;
-  const showToggle = Boolean(generated && demo);
+  const showLlmButton = Boolean(llmMemo);
+  const showDeterministicButton = Boolean(generated);
+  const showDemoButton = Boolean(demo);
+  const showToggle =
+    [showLlmButton, showDeterministicButton, showDemoButton].filter(Boolean)
+      .length > 1;
+
+  const tagLabel =
+    view === "llm"
+      ? usedFallback
+        ? "FALLBACK"
+        : "LLM"
+      : view === "deterministic"
+        ? "GENERATED"
+        : "RATEGAIN";
+
+  const subline = (() => {
+    if (
+      view === "llm" &&
+      llmState.kind === "success" &&
+      !usedFallback &&
+      llmState.providerMetadata
+    ) {
+      return `${llmState.providerMetadata.providerName} · ${llmState.providerMetadata.modelUsed} · Generated ${generatedDate}`;
+    }
+    if (view === "llm" && usedFallback) {
+      return `Deterministic fallback · Generated ${generatedDate}`;
+    }
+    if (view === "deterministic") {
+      return `Deterministic draft · Generated ${generatedDate}`;
+    }
+    return `RateGain Travel Technologies · Generated ${generatedDate}`;
+  })();
+
+  const headerBadge = (() => {
+    if (view === "llm") {
+      return usedFallback ? (
+        <Badge tone="warning" dot>
+          Deterministic fallback
+        </Badge>
+      ) : (
+        <Badge tone="success" dot>
+          LLM Follow-up Memo v1
+        </Badge>
+      );
+    }
+    if (view === "deterministic") {
+      return (
+        <Badge tone="accent" dot>
+          Deterministic Follow-up Memo v0
+        </Badge>
+      );
+    }
+    return (
+      <Badge tone="warning" dot>
+        Demo Follow-up Memo
+      </Badge>
+    );
+  })();
 
   return (
     <div className="space-y-5">
@@ -111,22 +190,12 @@ export function OutputPage() {
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--color-ink)] text-white tracking-wider">
-              {isGeneratedView ? "GENERATED" : "RATEGAIN"}
+              {tagLabel}
             </span>
             <span className="text-[11px] text-[var(--color-text-muted)]">
-              {isGeneratedView
-                ? `Deterministic draft · Generated ${generatedDate}`
-                : `RateGain Travel Technologies · Generated ${generatedDate}`}
+              {subline}
             </span>
-            {isGeneratedView ? (
-              <Badge tone="success" dot>
-                Generated Follow-up Memo v0
-              </Badge>
-            ) : (
-              <Badge tone="warning" dot>
-                Demo Follow-up Memo
-              </Badge>
-            )}
+            {headerBadge}
           </div>
           <h1
             className="text-[24px] font-semibold tracking-tight text-[var(--color-text)] mt-1"
@@ -134,33 +203,44 @@ export function OutputPage() {
           >
             {memo.title}
           </h1>
-          <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1">
-            Deterministic draft — LLM refinement to be added later.
-          </p>
+          {view === "llm" && usedFallback && (
+            <p className="text-[11.5px] text-[var(--color-warning)] mt-1 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              LLM generation was unavailable or failed; deterministic v0 was
+              used instead.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {showToggle && (
             <div className="inline-flex rounded-[var(--radius-sm)] border border-[var(--color-border)] overflow-hidden">
-              <button
-                onClick={() => setView("generated")}
-                className={`text-[11.5px] font-medium px-3 py-1.5 ${
-                  view === "generated"
-                    ? "bg-[var(--color-ink)] text-white"
-                    : "bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                }`}
-              >
-                Generated
-              </button>
-              <button
-                onClick={() => setView("demo")}
-                className={`text-[11.5px] font-medium px-3 py-1.5 border-l border-[var(--color-border)] ${
-                  view === "demo"
-                    ? "bg-[var(--color-ink)] text-white"
-                    : "bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                }`}
-              >
-                Demo
-              </button>
+              {showDemoButton && (
+                <ToggleButton
+                  active={view === "demo"}
+                  onClick={() => setUserView("demo")}
+                  isFirst
+                >
+                  Demo
+                </ToggleButton>
+              )}
+              {showDeterministicButton && (
+                <ToggleButton
+                  active={view === "deterministic"}
+                  onClick={() => setUserView("deterministic")}
+                  isFirst={!showDemoButton}
+                >
+                  Deterministic
+                </ToggleButton>
+              )}
+              {showLlmButton && (
+                <ToggleButton
+                  active={view === "llm"}
+                  onClick={() => setUserView("llm")}
+                  isFirst={!showDemoButton && !showDeterministicButton}
+                >
+                  {usedFallback ? "Fallback" : "LLM"}
+                </ToggleButton>
+              )}
             </div>
           )}
           <Button
@@ -201,7 +281,6 @@ export function OutputPage() {
 
       {/* Reader layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left — section navigator */}
         <div className="lg:col-span-2 hidden lg:block">
           <SectionNavigator
             sections={memo.sections.map((s) => ({ id: s.id, title: s.title }))}
@@ -210,7 +289,6 @@ export function OutputPage() {
           />
         </div>
 
-        {/* Center — memo body */}
         <article className="lg:col-span-7 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-md)] px-8 sm:px-10 py-8">
           {memo.sections.map((section, i) => (
             <section
@@ -280,11 +358,37 @@ export function OutputPage() {
           ))}
         </article>
 
-        {/* Right — source rail */}
         <div className="lg:col-span-3">
           <SourcePanel sections={memo.sections} activeId={activeId} />
         </div>
       </div>
     </div>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  isFirst,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  isFirst: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`text-[11.5px] font-medium px-3 py-1.5 ${
+        isFirst ? "" : "border-l border-[var(--color-border)]"
+      } ${
+        active
+          ? "bg-[var(--color-ink)] text-white"
+          : "bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

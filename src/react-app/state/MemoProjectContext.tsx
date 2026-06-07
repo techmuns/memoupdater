@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   type ReactNode,
 } from "react";
 import type {
@@ -14,6 +15,12 @@ import type {
   FollowUpMemo,
   FollowUpMemoGenerationResult,
   GeneratedMemoStatus,
+  GenerateFollowUpMemoRequest,
+  GenerateFollowUpMemoResponse,
+  GenerateFollowUpMemoUpdateDoc,
+  LlmGenerationState,
+  LlmGenerationWarning,
+  LlmStatusResponse,
   LocalUploadedFile,
   MemoAnalysisMode,
   MemoDNA,
@@ -36,6 +43,8 @@ interface State {
   demoFollowUpMemo: FollowUpMemo | null;
   generatedMemo: FollowUpMemo | null;
   generationError: string | null;
+  llm: LlmGenerationState;
+  llmProviderStatus: LlmStatusResponse | null;
   mode: MemoAnalysisMode;
 }
 
@@ -56,6 +65,8 @@ type Action =
   | { type: "SET_GENERATED_MEMO"; memo: FollowUpMemo }
   | { type: "CLEAR_GENERATED_MEMO" }
   | { type: "SET_GENERATION_ERROR"; error: string | null }
+  | { type: "SET_LLM_STATE"; state: LlmGenerationState }
+  | { type: "SET_LLM_PROVIDER_STATUS"; status: LlmStatusResponse | null }
   | { type: "SET_MODE"; mode: MemoAnalysisMode }
   | { type: "RESET_EXTRACTED" };
 
@@ -70,6 +81,8 @@ const initialState: State = {
   demoFollowUpMemo: null,
   generatedMemo: null,
   generationError: null,
+  llm: { kind: "idle" },
+  llmProviderStatus: null,
   mode: "demo",
 };
 
@@ -131,9 +144,18 @@ function reducer(state: State, action: Action): State {
     case "SET_GENERATED_MEMO":
       return { ...state, generatedMemo: action.memo, generationError: null };
     case "CLEAR_GENERATED_MEMO":
-      return { ...state, generatedMemo: null, generationError: null };
+      return {
+        ...state,
+        generatedMemo: null,
+        generationError: null,
+        llm: { kind: "idle" },
+      };
     case "SET_GENERATION_ERROR":
       return { ...state, generationError: action.error };
+    case "SET_LLM_STATE":
+      return { ...state, llm: action.state };
+    case "SET_LLM_PROVIDER_STATUS":
+      return { ...state, llmProviderStatus: action.status };
     case "SET_MODE":
       return { ...state, mode: action.mode };
     case "RESET_EXTRACTED":
@@ -147,6 +169,7 @@ function reducer(state: State, action: Action): State {
         extractedDna: null,
         generatedMemo: null,
         generationError: null,
+        llm: { kind: "idle" },
         mode: "demo",
       };
   }
@@ -164,6 +187,8 @@ interface MemoProjectContextValue {
   extractUpdateDoc: (kind: DocumentKind, file: File) => Promise<ExtractionResult>;
   buildDnaFromCurrentExtraction: () => MemoDNA | null;
   generateFollowUp: () => FollowUpMemoGenerationResult | null;
+  generateLlmFollowUp: () => Promise<void>;
+  refreshLlmProviderStatus: () => Promise<void>;
   clearGeneratedMemo: () => void;
   setMode: (mode: MemoAnalysisMode) => void;
   resetExtracted: () => void;
@@ -173,6 +198,7 @@ const Ctx = createContext<MemoProjectContextValue | null>(null);
 
 export function MemoProjectProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const llmAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     api
@@ -183,6 +209,14 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       .demoFollowUpMemo()
       .then((memo) => dispatch({ type: "SET_DEMO_FOLLOW_UP", memo }))
       .catch(() => {});
+    api
+      .llmStatus()
+      .then((status) =>
+        dispatch({ type: "SET_LLM_PROVIDER_STATUS", status }),
+      )
+      .catch(() =>
+        dispatch({ type: "SET_LLM_PROVIDER_STATUS", status: null }),
+      );
   }, []);
 
   const setUpload = useCallback(
@@ -286,6 +320,146 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     state.uploads,
   ]);
 
+  const refreshLlmProviderStatus = useCallback(async (): Promise<void> => {
+    try {
+      const status = await api.llmStatus();
+      dispatch({ type: "SET_LLM_PROVIDER_STATUS", status });
+    } catch {
+      dispatch({ type: "SET_LLM_PROVIDER_STATUS", status: null });
+    }
+  }, []);
+
+  const generateLlmFollowUp = useCallback(async (): Promise<void> => {
+    const dna =
+      state.mode === "extracted" && state.extractedDna
+        ? state.extractedDna
+        : state.demoDna;
+    if (!dna || !state.extraction) return;
+    if (
+      state.extraction.status !== "success" &&
+      state.extraction.status !== "partial"
+    ) {
+      return;
+    }
+    const analysis = analyzeUpdatePack({
+      extractions: state.updateExtractions,
+      uploads: state.uploads,
+    });
+    if (analysis.documentsAnalyzed.length === 0) return;
+
+    llmAbortRef.current?.abort();
+    const controller = new AbortController();
+    llmAbortRef.current = controller;
+
+    dispatch({ type: "SET_LLM_STATE", state: { kind: "loading" } });
+
+    const updateDocs: GenerateFollowUpMemoUpdateDoc[] = (
+      Object.keys(state.updateExtractions) as DocumentKind[]
+    ).reduce<GenerateFollowUpMemoUpdateDoc[]>((acc, kind) => {
+      const ext = state.updateExtractions[kind];
+      const upload = state.uploads[kind];
+      if (!ext || !upload) return acc;
+      if (ext.status !== "success" && ext.status !== "partial") return acc;
+      acc.push({
+        id: upload.id,
+        kind,
+        filename: upload.filename,
+        text: ext.text,
+      });
+      return acc;
+    }, []);
+
+    const initialUpload = state.uploads.initial_memo;
+    const initialFilename = state.extraction.source.filename;
+    const initialSizeBytes =
+      initialUpload?.sizeBytes ?? state.extraction.source.sizeBytes;
+
+    const projectLabel = dna.projectId;
+    const req: GenerateFollowUpMemoRequest = {
+      project: {
+        id: dna.projectId,
+        ticker: projectLabel,
+        companyName: projectLabel,
+      },
+      initialMemo: {
+        id: initialUpload?.id,
+        text: state.extraction.text,
+        sourceFilename: initialFilename,
+        sizeBytes: initialSizeBytes,
+      },
+      updateDocs,
+      dna,
+      analysis,
+    };
+
+    let response: GenerateFollowUpMemoResponse | null = null;
+    let networkError = "";
+    try {
+      response = await api.generateFollowUpMemo(req, controller.signal);
+    } catch (err) {
+      networkError = err instanceof Error ? err.message : "Network error";
+    }
+
+    // Bail if a newer generation superseded us.
+    if (llmAbortRef.current !== controller) return;
+    llmAbortRef.current = null;
+
+    if (response && response.ok) {
+      dispatch({
+        type: "SET_LLM_STATE",
+        state: {
+          kind: "success",
+          memo: response.memo,
+          providerMetadata: response.providerMetadata,
+          usedFallback: false,
+          warnings: response.warnings,
+        },
+      });
+      return;
+    }
+
+    const warning: LlmGenerationWarning = response
+      ? { code: response.code, message: response.message }
+      : { code: "llm_error", message: networkError || "Network error" };
+
+    try {
+      const generatedAt = new Date().toISOString();
+      const fallback = generateFollowUpMemo({
+        dna,
+        analysis,
+        uploads: state.uploads,
+        generatedAt,
+      });
+      dispatch({
+        type: "SET_LLM_STATE",
+        state: {
+          kind: "success",
+          memo: fallback.memo,
+          providerMetadata: {
+            providerName: "none",
+            modelUsed: "deterministic-fallback",
+          },
+          usedFallback: true,
+          warnings: [warning],
+        },
+      });
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Fallback generation failed";
+      dispatch({
+        type: "SET_LLM_STATE",
+        state: { kind: "error", error: msg },
+      });
+    }
+  }, [
+    state.mode,
+    state.extractedDna,
+    state.demoDna,
+    state.extraction,
+    state.updateExtractions,
+    state.uploads,
+  ]);
+
   const clearGeneratedMemo = useCallback(() => {
     dispatch({ type: "CLEAR_GENERATED_MEMO" });
   }, []);
@@ -331,6 +505,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       extractUpdateDoc,
       buildDnaFromCurrentExtraction,
       generateFollowUp,
+      generateLlmFollowUp,
+      refreshLlmProviderStatus,
       clearGeneratedMemo,
       setMode,
       resetExtracted,
@@ -343,6 +519,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     extractUpdateDoc,
     buildDnaFromCurrentExtraction,
     generateFollowUp,
+    generateLlmFollowUp,
+    refreshLlmProviderStatus,
     clearGeneratedMemo,
     setMode,
     resetExtracted,
