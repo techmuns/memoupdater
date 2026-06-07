@@ -17,40 +17,40 @@
   },
 
   // ---------------------------------------------------------------
-  // Phase 4A/4B: LLM follow-up memo generation. DEFAULT OFF for safety.
+  // Phase 4A/4B/4C: LLM follow-up memo generation.
   //
-  // To enable, set ALL of the following (server-side only):
-  //   1. LLM_ENABLED       = "true"     (in this "vars" block)
-  //   2. LLM_PROVIDER      = "anthropic"
-  //   3. LLM_MODEL         = "claude-sonnet-4-6" (or another supported id)
-  //   4. LLM_API_KEY       = <secret, never committed>:
-  //        wrangler secret put LLM_API_KEY
+  // LLM_ENABLED="true" only turns on the server-side LLM path. It
+  // does NOT by itself authorize anyone to spend provider tokens.
   //
-  // Phase 4B app-level access gate (DEFAULT ON):
-  //   5. LLM_GATE_ENABLED  = "true"     (in this "vars" block)
-  //   6. LLM_GATE_SECRET   = <secret, never committed>:
-  //        wrangler secret put LLM_GATE_SECRET
+  // LLM Memo v1 is still NOT ready unless BOTH of these secrets are
+  // set out-of-band against the deployed Worker (never committed):
+  //   wrangler secret put LLM_API_KEY      # the Anthropic key
+  //   wrangler secret put LLM_GATE_SECRET  # the shared gate token
+  // /api/llm/status reports llmReady:true only when all four hold:
+  // LLM_ENABLED="true", provider configured, API key configured,
+  // and (gate disabled OR gate secret configured).
   //
-  // The gate requires callers to send X-Memo-LLM-Gate: <secret>. The
-  // Worker compares with constant-time equality. Without a valid token
-  // /api/generate/follow-up-memo returns {ok:false, code:
-  // "llm_access_denied"} and the client falls back to the deterministic
-  // v0 generator. The gate short-circuits before any Anthropic call, so
-  // rejected requests cost nothing on the provider side.
-  //
-  // WARNING: this Worker has NO auth and NO rate limiting. The gate is
-  // a single shared secret, not user auth. Enabling LLM_ENABLED=true
-  // WITH LLM_GATE_ENABLED=false on a public Worker can incur provider
-  // costs from arbitrary visitors. Always protect with Cloudflare
-  // Access, WAF, rate limiting, or another access-control layer before
-  // public deployment. The gate alone is not a substitute.
-  //
-  // If LLM_ENABLED !== "true", or if any required field is missing,
-  // /api/llm/status reports llmReady:false and the client silently
+  // With LLM_GATE_ENABLED="true" the Worker MUST still reject
+  // /api/generate/follow-up-memo unless the gate secret is set AND
+  // the request carries a valid X-Memo-LLM-Gate header (constant-
+  // time compare in src/worker/llm/provider.ts::checkGateToken).
+  // Rejected requests return HTTP 200 {ok:false, code:
+  // "llm_access_denied"} and short-circuit before any Anthropic
+  // call, so they cost nothing on the provider side. The client
   // falls back to the deterministic v0 generator.
+  //
+  // NO SECRET VALUES ARE COMMITTED. The two `wrangler secret put`
+  // commands above are the operator's job; the values must never
+  // appear in this file, .dev.vars, .env, or any tracked source.
+  //
+  // Cloudflare Access / WAF / IP allowlist / rate limiting is
+  // RECOMMENDED in the Cloudflare dashboard before any non-internal
+  // use. The shared in-app gate token is a cost-spend deterrent for
+  // uninformed visitors; it is NOT a substitute for real auth or
+  // rate limiting.
   // ---------------------------------------------------------------
   "vars": {
-    "LLM_ENABLED": "false",
+    "LLM_ENABLED": "true",
     "LLM_PROVIDER": "anthropic",
     "LLM_MODEL": "claude-sonnet-4-6",
     "LLM_GATE_ENABLED": "true"
