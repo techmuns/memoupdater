@@ -17,29 +17,43 @@
   },
 
   // ---------------------------------------------------------------
-  // Phase 4A: LLM follow-up memo generation. DEFAULT OFF for safety.
+  // Phase 4A/4B: LLM follow-up memo generation. DEFAULT OFF for safety.
   //
-  // To enable, set ALL of the following:
-  //   1. LLM_ENABLED = "true"     (in this file's "vars" block)
-  //   2. LLM_PROVIDER = "anthropic"
-  //   3. LLM_MODEL    = "claude-sonnet-4-6"  (or another supported id)
-  //   4. LLM_API_KEY  = <set as a secret, never committed>:
+  // To enable, set ALL of the following (server-side only):
+  //   1. LLM_ENABLED       = "true"     (in this "vars" block)
+  //   2. LLM_PROVIDER      = "anthropic"
+  //   3. LLM_MODEL         = "claude-sonnet-4-6" (or another supported id)
+  //   4. LLM_API_KEY       = <secret, never committed>:
   //        wrangler secret put LLM_API_KEY
   //
-  // WARNING: this Worker has no auth or rate limiting. Enabling LLM
-  // generation on a public unauthenticated Worker can incur provider
-  // costs from arbitrary visitors. Protect with Cloudflare Access,
-  // WAF rules, or another access-control layer before flipping
-  // LLM_ENABLED to "true" in production.
+  // Phase 4B app-level access gate (DEFAULT ON):
+  //   5. LLM_GATE_ENABLED  = "true"     (in this "vars" block)
+  //   6. LLM_GATE_SECRET   = <secret, never committed>:
+  //        wrangler secret put LLM_GATE_SECRET
   //
-  // If LLM_ENABLED is not "true" OR any of provider/model/key is
-  // missing, /api/llm/status returns {configured:false} and the
-  // client silently falls back to the deterministic v0 generator.
+  // The gate requires callers to send X-Memo-LLM-Gate: <secret>. The
+  // Worker compares with constant-time equality. Without a valid token
+  // /api/generate/follow-up-memo returns {ok:false, code:
+  // "llm_access_denied"} and the client falls back to the deterministic
+  // v0 generator. The gate short-circuits before any Anthropic call, so
+  // rejected requests cost nothing on the provider side.
+  //
+  // WARNING: this Worker has NO auth and NO rate limiting. The gate is
+  // a single shared secret, not user auth. Enabling LLM_ENABLED=true
+  // WITH LLM_GATE_ENABLED=false on a public Worker can incur provider
+  // costs from arbitrary visitors. Always protect with Cloudflare
+  // Access, WAF, rate limiting, or another access-control layer before
+  // public deployment. The gate alone is not a substitute.
+  //
+  // If LLM_ENABLED !== "true", or if any required field is missing,
+  // /api/llm/status reports llmReady:false and the client silently
+  // falls back to the deterministic v0 generator.
   // ---------------------------------------------------------------
   "vars": {
     "LLM_ENABLED": "false",
     "LLM_PROVIDER": "anthropic",
-    "LLM_MODEL": "claude-sonnet-4-6"
+    "LLM_MODEL": "claude-sonnet-4-6",
+    "LLM_GATE_ENABLED": "true"
   }
 
   // ---------------------------------------------------------------

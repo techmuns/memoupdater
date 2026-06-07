@@ -187,7 +187,7 @@ interface MemoProjectContextValue {
   extractUpdateDoc: (kind: DocumentKind, file: File) => Promise<ExtractionResult>;
   buildDnaFromCurrentExtraction: () => MemoDNA | null;
   generateFollowUp: () => FollowUpMemoGenerationResult | null;
-  generateLlmFollowUp: () => Promise<void>;
+  generateLlmFollowUp: (gateToken?: string) => Promise<void>;
   refreshLlmProviderStatus: () => Promise<void>;
   clearGeneratedMemo: () => void;
   setMode: (mode: MemoAnalysisMode) => void;
@@ -329,7 +329,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const generateLlmFollowUp = useCallback(async (): Promise<void> => {
+  const generateLlmFollowUp = useCallback(async (gateToken?: string): Promise<void> => {
     const dna =
       state.mode === "extracted" && state.extractedDna
         ? state.extractedDna
@@ -395,7 +395,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     let response: GenerateFollowUpMemoResponse | null = null;
     let networkError = "";
     try {
-      response = await api.generateFollowUpMemo(req, controller.signal);
+      response = await api.generateFollowUpMemo(req, controller.signal, gateToken);
     } catch (err) {
       networkError = err instanceof Error ? err.message : "Network error";
     }
@@ -420,7 +420,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
 
     const warning: LlmGenerationWarning = response
       ? { code: response.code, message: response.message }
-      : { code: "llm_error", message: networkError || "Network error" };
+      : { code: "provider_error", message: networkError || "Network error" };
 
     try {
       const generatedAt = new Date().toISOString();

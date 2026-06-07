@@ -3,23 +3,19 @@ import {
   Database,
   HardDrive,
   KeyRound,
-  Settings,
+  Lock,
   ShieldCheck,
   Sparkles,
   Workflow,
 } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
+import { AlertCircle } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { SectionHeader } from "../components/ui/SectionHeader";
 import { Panel } from "../components/ui/Panel";
 import { useMemoProject } from "../state/MemoProjectContext";
 
-type RowTone =
-  | "neutral"
-  | "ink"
-  | "accent"
-  | "warning"
-  | "success";
+type RowTone = "neutral" | "ink" | "accent" | "warning" | "success";
 
 interface SettingsRow {
   icon: ComponentType<SVGProps<SVGSVGElement>>;
@@ -53,29 +49,41 @@ const STORAGE_ROWS: SettingsRow[] = [
   },
 ];
 
+function yesNoBadge(value: boolean, positive = true): RowTone {
+  if (value) return positive ? "success" : "warning";
+  return positive ? "neutral" : "success";
+}
+
 export function SettingsPage() {
   const { state, refreshLlmProviderStatus } = useMemoProject();
   const status = state.llmProviderStatus;
-  const configured = Boolean(status?.configured);
 
   useEffect(() => {
     void refreshLlmProviderStatus();
   }, [refreshLlmProviderStatus]);
+
+  const llmEnabled = status?.llmEnabled === true;
+  const providerConfigured = status?.providerConfigured === true;
+  const apiKeyConfigured = status?.apiKeyConfigured === true;
+  const gateEnabled = status?.gateEnabled === true;
+  const gateConfigured = status?.gateConfigured === true;
+  const llmReady = status?.llmReady === true;
+  const warnings = status?.warnings ?? [];
 
   const llmRows: SettingsRow[] = [
     {
       icon: ShieldCheck,
       label: "LLM enabled",
       detail: 'LLM_ENABLED — server must set this var to "true"',
-      status: configured ? "Configured" : "Not configured",
-      tone: configured ? "success" : "neutral",
+      status: llmEnabled ? "Yes" : "No",
+      tone: yesNoBadge(llmEnabled),
     },
     {
-      icon: Settings,
-      label: "Provider",
+      icon: Sparkles,
+      label: "Provider configured",
       detail: "LLM_PROVIDER",
       status: status?.provider ?? "—",
-      tone: status?.provider ? "ink" : "neutral",
+      tone: providerConfigured ? "ink" : "neutral",
     },
     {
       icon: Sparkles,
@@ -86,10 +94,36 @@ export function SettingsPage() {
     },
     {
       icon: KeyRound,
-      label: "API key",
+      label: "API key configured",
       detail: "LLM_API_KEY — set via `wrangler secret put LLM_API_KEY`",
-      status: configured ? "Configured" : "Not set",
-      tone: configured ? "success" : "neutral",
+      status: apiKeyConfigured ? "Yes" : "No",
+      tone: yesNoBadge(apiKeyConfigured),
+    },
+    {
+      icon: Lock,
+      label: "Access gate enabled",
+      detail: 'LLM_GATE_ENABLED — recommended "true" for public deployments',
+      status: gateEnabled ? "Yes" : "No",
+      tone: gateEnabled ? "success" : "warning",
+    },
+    {
+      icon: Lock,
+      label: "Access gate configured",
+      detail:
+        "LLM_GATE_SECRET — set via `wrangler secret put LLM_GATE_SECRET`",
+      status: gateConfigured ? "Yes" : "No",
+      tone: gateEnabled
+        ? gateConfigured
+          ? "success"
+          : "warning"
+        : "neutral",
+    },
+    {
+      icon: Sparkles,
+      label: "LLM Memo v1 ready",
+      detail: "Server-side readiness across all checks above",
+      status: llmReady ? "Yes" : "No",
+      tone: yesNoBadge(llmReady),
     },
     {
       icon: ShieldCheck,
@@ -106,26 +140,43 @@ export function SettingsPage() {
       <SectionHeader
         eyebrow="Settings"
         title="Bindings and secrets"
-        description="Phase 4A adds an optional LLM Follow-up Memo v1 generated server-side in the Worker. Default is OFF; deterministic v0 remains the always-available baseline."
+        description="Phase 4B adds an app-level access gate for the optional LLM Follow-up Memo v1. Default is OFF for LLM, ON for the gate; deterministic v0 remains the always-available baseline."
       />
 
       <Panel
         eyebrow="LLM generation"
-        title={configured ? "LLM is enabled" : "LLM is not configured"}
+        title={llmReady ? "LLM Memo v1 is ready" : "LLM Memo v1 is not ready"}
         actions={
-          <Badge tone={configured ? "success" : "neutral"} dot>
-            {configured ? "Enabled" : "Disabled"}
+          <Badge tone={llmReady ? "success" : "neutral"} dot>
+            {llmReady ? "Ready" : "Not ready"}
           </Badge>
         }
       >
-        <p className="text-[12px] text-[var(--color-text-muted)] mb-3 leading-relaxed">
-          {configured
-            ? "LLM generation is enabled. Memo and update-pack text will be sent to the configured provider when you click Generate LLM Memo v1."
-            : "LLM generation is not configured. Deterministic generation remains available."}
-        </p>
-        <p className="text-[11.5px] text-[var(--color-text-subtle)] mb-1">
+        {warnings.length > 0 && (
+          <ul className="mb-3 space-y-1.5">
+            {warnings.map((msg) => {
+              const isWarning = !msg.startsWith("LLM is disabled");
+              return (
+                <li
+                  key={msg}
+                  className={`text-[11.5px] inline-flex items-start gap-1.5 leading-snug ${
+                    isWarning
+                      ? "text-[var(--color-warning)]"
+                      : "text-[var(--color-text-muted)]"
+                  }`}
+                >
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{msg}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="text-[11.5px] text-[var(--color-text-subtle)] mb-2">
           LLM Memo v1 sends extracted memo and update-pack text to the
           configured LLM provider. Deterministic v0 stays local/browser-side.
+          Internal access tokens are stored in session storage only and are
+          never logged.
         </p>
         <RowList rows={llmRows} />
       </Panel>
@@ -141,10 +192,7 @@ function RowList({ rows }: { rows: SettingsRow[] }) {
   return (
     <ul className="divide-y divide-[var(--color-border)] -mx-5">
       {rows.map(({ icon: Icon, label, detail, status, tone }) => (
-        <li
-          key={label}
-          className="px-5 py-3 flex items-center gap-4"
-        >
+        <li key={label} className="px-5 py-3 flex items-center gap-4">
           <div className="w-9 h-9 rounded-[var(--radius-md)] bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] grid place-items-center shrink-0 border border-[var(--color-border)]">
             <Icon className="w-4 h-4" />
           </div>

@@ -206,8 +206,10 @@ export function OutputPage() {
           {view === "llm" && usedFallback && (
             <p className="text-[11.5px] text-[var(--color-warning)] mt-1 flex items-center gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-              LLM generation was unavailable or failed; deterministic v0 was
-              used instead.
+              {llmState.kind === "success" &&
+              llmState.warnings[0]?.code === "llm_access_denied"
+                ? "LLM access denied. Showing deterministic fallback."
+                : "LLM generation was unavailable or failed; deterministic v0 was used instead."}
             </p>
           )}
         </div>

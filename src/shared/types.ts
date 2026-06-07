@@ -261,10 +261,16 @@ export interface LlmProviderMetadata {
 }
 
 export interface LlmStatusResponse {
-  configured: boolean;
+  llmEnabled: boolean;
+  providerConfigured: boolean;
+  apiKeyConfigured: boolean;
   provider?: LlmProviderName;
   model?: string;
+  gateEnabled: boolean;
+  gateConfigured: boolean;
+  llmReady: boolean;
   fallbackAvailable: true;
+  warnings: string[];
 }
 
 export interface GenerateFollowUpMemoUpdateDoc {
@@ -297,9 +303,13 @@ export interface GenerateFollowUpMemoRequest {
 
 export type LlmGenerationErrorCode =
   | "not_configured"
-  | "llm_error"
+  | "provider_missing"
+  | "api_key_missing"
+  | "gate_misconfigured"
+  | "llm_access_denied"
+  | "provider_error"
+  | "parse_error"
   | "timeout"
-  | "malformed_output"
   | "rate_limited";
 
 export interface LlmGenerationWarning {

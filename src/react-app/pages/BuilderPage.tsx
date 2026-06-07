@@ -9,6 +9,8 @@ import {
   RefreshCcw,
   Bot,
   ShieldCheck,
+  Lock,
+  X,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { StatusChip } from "../components/ui/StatusChip";
@@ -17,6 +19,7 @@ import { Badge } from "../components/ui/Badge";
 import { Panel } from "../components/ui/Panel";
 import { ThesisMap } from "../components/ui/ThesisMap";
 import { useMemoProject } from "../state/MemoProjectContext";
+import { useLlmGateToken } from "../lib/llmGateToken";
 import { analyzeUpdatePack } from "../lib/updateAnalysis";
 import { describeKind } from "../lib/fileMeta";
 import type { GenerationStep } from "@shared/types";
@@ -66,6 +69,8 @@ export function BuilderPage() {
     generateLlmFollowUp,
   } = useMemoProject();
   const [busy, setBusy] = useState(false);
+  const [gateToken, setGateToken] = useLlmGateToken();
+  const [gateInput, setGateInput] = useState("");
 
   const checkpoints = currentDna?.thesisCheckpoints ?? [];
   const isExtracted = currentMode === "extracted" && state.extractedDna;
@@ -134,7 +139,7 @@ export function BuilderPage() {
   };
 
   const handleGenerateLlm = async () => {
-    await generateLlmFollowUp();
+    await generateLlmFollowUp(gateToken ?? undefined);
     navigate("/output");
   };
 
@@ -150,23 +155,51 @@ export function BuilderPage() {
     return "Generate Follow-up Memo v0";
   })();
 
-  const llmConfigured = state.llmProviderStatus?.configured === true;
+  const llmStatus = state.llmProviderStatus;
+  const llmReady = llmStatus?.llmReady === true;
+  const llmEnabled = llmStatus?.llmEnabled === true;
+  const gateEnabled = llmStatus?.gateEnabled === true;
+  const gateConfigured = llmStatus?.gateConfigured === true;
+  const tokenRequired = gateEnabled && gateConfigured && !gateToken;
   const llmLoading = state.llm.kind === "loading";
   const llmHasSuccess = state.llm.kind === "success";
+  const llmAccessDenied =
+    state.llm.kind === "success" &&
+    state.llm.usedFallback &&
+    state.llm.warnings[0]?.code === "llm_access_denied";
   const llmButtonDisabled =
     llmLoading ||
-    !llmConfigured ||
+    !llmReady ||
+    tokenRequired ||
     generationStatus === "missing_initial_memo" ||
     generationStatus === "missing_update_pack";
   const llmButtonLabel = (() => {
     if (llmLoading) return "Generating LLM…";
-    if (llmHasSuccess) return "Regenerate LLM memo";
+    if (llmHasSuccess && !llmAccessDenied) return "Regenerate LLM memo";
     return "Generate LLM Memo v1";
+  })();
+  const llmButtonTitle = (() => {
+    if (!llmEnabled) return "LLM generation is not enabled on the server";
+    if (!llmReady) return "LLM is not configured";
+    if (tokenRequired)
+      return "Enter the internal LLM access token to enable LLM Memo v1";
+    return undefined;
   })();
 
   const memo = state.generatedMemo ?? state.demoFollowUpMemo;
   const memoIsGenerated = Boolean(state.generatedMemo);
   const anyUserMemoAvailable = memoIsGenerated || llmHasSuccess;
+
+  const handleSaveGateToken = () => {
+    const trimmed = gateInput.trim();
+    if (!trimmed) return;
+    setGateToken(trimmed);
+    setGateInput("");
+  };
+
+  const handleClearGateToken = () => {
+    setGateToken(null);
+  };
 
   return (
     <div className="space-y-7">
@@ -194,11 +227,7 @@ export function BuilderPage() {
               onClick={handleGenerateLlm}
               disabled={llmButtonDisabled}
               leadingIcon={<Bot className="w-4 h-4" />}
-              title={
-                llmConfigured
-                  ? undefined
-                  : "LLM generation is not configured on the server"
-              }
+              title={llmButtonTitle}
             >
               {llmButtonLabel}
             </Button>
@@ -221,17 +250,14 @@ export function BuilderPage() {
         </Badge>
       </div>
 
-      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3 flex flex-col gap-1.5">
+      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3 space-y-2.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge tone={llmConfigured ? "success" : "neutral"} dot>
-            {llmConfigured
-              ? "LLM generation enabled"
-              : "LLM generation not configured"}
+          <Badge tone={llmReady ? "success" : "neutral"} dot>
+            {llmReady ? "LLM generation ready" : "LLM generation not ready"}
           </Badge>
-          {llmConfigured && state.llmProviderStatus && (
+          {llmStatus?.provider && llmStatus?.model && (
             <span className="text-[11px] text-[var(--color-text-muted)]">
-              {state.llmProviderStatus.provider} ·{" "}
-              {state.llmProviderStatus.model}
+              {llmStatus.provider} · {llmStatus.model}
             </span>
           )}
           <span className="text-[11px] text-[var(--color-text-subtle)] inline-flex items-center gap-1">
@@ -239,9 +265,85 @@ export function BuilderPage() {
             Deterministic v0 fallback is always available
           </span>
         </div>
+
+        {llmStatus && llmStatus.warnings.length > 0 && (
+          <ul className="space-y-1">
+            {llmStatus.warnings.map((msg) => {
+              const isWarning = !msg.startsWith("LLM is disabled");
+              return (
+                <li
+                  key={msg}
+                  className={`text-[11.5px] inline-flex items-start gap-1.5 leading-snug ${
+                    isWarning
+                      ? "text-[var(--color-warning)]"
+                      : "text-[var(--color-text-muted)]"
+                  }`}
+                >
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{msg}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {gateEnabled && gateConfigured && (
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <Lock className="w-3.5 h-3.5 text-[var(--color-text-muted)] shrink-0" />
+            {gateToken ? (
+              <>
+                <Badge tone="success" dot>
+                  Access token saved (session)
+                </Badge>
+                <button
+                  onClick={handleClearGateToken}
+                  className="text-[11.5px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] inline-flex items-center gap-1"
+                >
+                  <X className="w-3 h-3" /> Clear
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="password"
+                  value={gateInput}
+                  onChange={(e) => setGateInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveGateToken();
+                  }}
+                  placeholder="Internal LLM access token"
+                  autoComplete="new-password"
+                  className="text-[12px] px-2.5 py-1 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] flex-1 min-w-[200px] max-w-[320px]"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleSaveGateToken}
+                  disabled={!gateInput.trim()}
+                  leadingIcon={<Lock className="w-3.5 h-3.5" />}
+                >
+                  Unlock LLM
+                </Button>
+                <span className="text-[11px] text-[var(--color-text-muted)]">
+                  Enter internal LLM access token to enable LLM Memo v1.
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
+        {llmAccessDenied && (
+          <p className="text-[11.5px] text-[var(--color-warning)] inline-flex items-start gap-1.5 pt-1">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>LLM access denied. Showing deterministic fallback.</span>
+          </p>
+        )}
+
         <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug">
           LLM Memo v1 sends extracted memo and update-pack text to the
           configured LLM provider. Deterministic v0 stays local/browser-side.
+          Access tokens are stored in session storage only and are never
+          logged.
         </p>
       </div>
 

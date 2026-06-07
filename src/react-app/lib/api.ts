@@ -49,10 +49,14 @@ export const api = {
   generateFollowUpMemo: (
     req: GenerateFollowUpMemoRequest,
     signal?: AbortSignal,
+    gateToken?: string,
   ) =>
     postJson<GenerateFollowUpMemoResponse, GenerateFollowUpMemoRequest>(
       "/api/generate/follow-up-memo",
       req,
-      { signal },
+      {
+        signal,
+        headers: gateToken ? { "X-Memo-LLM-Gate": gateToken } : undefined,
+      },
     ),
 };
