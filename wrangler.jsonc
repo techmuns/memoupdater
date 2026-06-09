@@ -46,43 +46,47 @@
   //   "LLM_API_KEY" | "OPENAI_API_KEY" | "none"
   // so Settings can show which secret is in use without leaking it.
   //
-  // /api/llm/status reports llmReady:true only when all four hold:
-  // LLM_ENABLED="true", provider configured, API key configured
+  // /api/llm/status reports llmReady:true only when all of these
+  // hold: LLM_ENABLED="true", provider configured, API key configured
   // (either name), and (gate disabled OR gate secret configured).
   // researchAvailable:true requires the above AND provider="openai".
   //
-  // App-level access gate (LLM_GATE_ENABLED, default "true"):
-  //   Default is "true" because this repo has no real auth, no
-  //   Cloudflare Access config, and no rate limiting. The gate
-  //   prevents anonymous abuse of the provider key while you set
-  //   up real controls. When enabled, generate AND research must
-  //   carry a valid X-Memo-LLM-Gate header (constant-time compare
-  //   in src/worker/llm/provider.ts::checkGateToken). Rejected
-  //   requests return HTTP 200 {ok:false, code:"llm_access_denied"}
-  //   and short-circuit before any provider call, so they cost
-  //   nothing on the provider side.
+  // App-level access gate (LLM_GATE_ENABLED, default "false"):
+  //   The default is "false". `vars` in this file is the source of
+  //   truth for the deployed Worker: every `wrangler deploy` (manual
+  //   or via GitHub/Workers CI) overwrites the env var with whatever
+  //   is committed here. So a value of "true" here would re-flip any
+  //   manual LLM_GATE_ENABLED change made in the Cloudflare dashboard
+  //   back to "true" on the next deploy. Committing "false" keeps the
+  //   gate off across deploys.
   //
-  //   Operators can set LLM_GATE_ENABLED="false" in this file AFTER
-  //   configuring Cloudflare Access / WAF / IP allowlist / rate
-  //   limiting. That is a deliberate hardening step, out-of-band,
-  //   not a repo default. The main Workspace UI never renders a
+  //   The backend gate is still fully implemented and supported for
+  //   future optional use (constant-time compare in
+  //   src/worker/llm/provider.ts::checkGateToken). To re-enable it,
+  //   set LLM_GATE_ENABLED="true" here (and configure LLM_GATE_SECRET
+  //   via `wrangler secret put`). When enabled, generate AND research
+  //   require a valid X-Memo-LLM-Gate header and otherwise return
+  //   HTTP 200 {ok:false, code:"llm_access_denied"}, short-circuiting
+  //   before any provider call. The main Workspace UI never renders a
   //   passcode input; Settings exposes the internal token under a
-  //   collapsed "Advanced" section for internal testing.
+  //   collapsed "Advanced" section for internal testing only.
   //
   // NO SECRET VALUES ARE COMMITTED. All `wrangler secret put`
   // commands above are the operator's job; the values must never
   // appear in this file, .dev.vars, .env, or any tracked source.
   //
-  // Cloudflare Access / WAF / IP allowlist / rate limiting is
-  // RECOMMENDED in the Cloudflare dashboard before any non-internal
-  // use. The shared in-app gate token is a cost-spend deterrent;
-  // it is NOT a substitute for real auth or rate limiting.
+  // With the app-level gate off by default, Cloudflare Access / WAF /
+  // IP allowlist / rate limiting is STRONGLY RECOMMENDED in the
+  // Cloudflare dashboard before any non-internal use — that is the
+  // real protection for the provider key. The shared in-app gate
+  // token was only ever a cost-spend deterrent, never a substitute
+  // for real auth or rate limiting.
   // ---------------------------------------------------------------
   "vars": {
     "LLM_ENABLED": "true",
     "LLM_PROVIDER": "openai",
     "LLM_MODEL": "gpt-5.2",
-    "LLM_GATE_ENABLED": "true"
+    "LLM_GATE_ENABLED": "false"
   }
 
   // ---------------------------------------------------------------
