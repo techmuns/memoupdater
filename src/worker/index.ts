@@ -58,6 +58,7 @@ import {
   runSectionRepair,
   type SectionCallResult,
 } from "./llm/jsonRepair";
+import { sanitizeMemoSectionForDisplay } from "@shared/sanitizeMemo";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -539,7 +540,10 @@ app.post("/api/generate/memo-section", async (c) => {
 
     const body: GenerateMemoSectionResponse = {
       ok: true,
-      section: ladder.section,
+      // Phase 5G: strip internal ids (r01/f01/local_initial_...) from the
+      // visible prose fields before the section leaves the worker. The
+      // structured sources[] (documentId/page/quote) are preserved intact.
+      section: sanitizeMemoSectionForDisplay(ladder.section),
       providerMetadata: {
         providerName: "openai",
         modelUsed: readiness.model,

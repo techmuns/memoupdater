@@ -5,6 +5,7 @@ import type {
   MemoConfidence,
   MemoSection,
 } from "@shared/types";
+import { humanSourceLabel } from "@shared/sanitizeMemo";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 import { SIGNAL_BADGE_TONE, SIGNAL_LABEL } from "../lib/signalDisplay";
@@ -220,8 +221,11 @@ function SectionView({
                 >
                   <FileText className="w-3 h-3 mt-0.5 shrink-0" />
                   <span>
-                    <span className="font-mono text-[var(--color-text)]">
-                      {src.documentId}
+                    {/* Visible label is human-readable; the machine
+                        documentId stays in the structured source object
+                        (and the React key) but never renders as text. */}
+                    <span className="font-medium text-[var(--color-text)]">
+                      {humanSourceLabel(src.documentId, i)}
                     </span>
                     {src.page && <> · p.{src.page}</>}
                     {src.quote && <> — "{src.quote}"</>}
@@ -322,12 +326,14 @@ function buildMarkdown(memo: FollowUpMemo): string {
     }
     if (s.sources.length > 0) {
       lines.push("", "**Sources:**");
-      for (const src of s.sources) {
+      s.sources.forEach((src, si) => {
         const extras = [src.page ? `p.${src.page}` : null, src.quote ? `"${src.quote}"` : null]
           .filter(Boolean)
           .join(" — ");
-        lines.push(`- ${src.documentId}${extras ? ` · ${extras}` : ""}`);
-      }
+        lines.push(
+          `- ${humanSourceLabel(src.documentId, si)}${extras ? ` · ${extras}` : ""}`,
+        );
+      });
     }
     lines.push("");
   });

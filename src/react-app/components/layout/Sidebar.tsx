@@ -25,10 +25,10 @@ export function Sidebar() {
       <div className="mx-3 mb-3 p-3 rounded-[var(--radius-md)] bg-[var(--color-surface-muted)] border border-[var(--color-border)]">
         <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-ink)]">
           <ShieldCheck className="w-3 h-3" />
-          Phase 5
+          Memo workflow
         </div>
         <div className="text-[11px] text-[var(--color-text-muted)] mt-1 leading-snug">
-          Upload an old memo → AI researches what changed → generate a same-style follow-up.
+          Upload memo → Research changes → Generate follow-up memo
         </div>
       </div>
     </aside>

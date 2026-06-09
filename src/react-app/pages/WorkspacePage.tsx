@@ -237,7 +237,8 @@ export function WorkspacePage() {
         </Panel>
       )}
 
-      {researchSuccess && (
+      {/* Pre-memo: research details live between Step 3 and Step 4. */}
+      {researchSuccess && !memoSuccess && (
         <ResearchFindingsCard research={researchSuccess.research} />
       )}
 
@@ -315,6 +316,17 @@ export function WorkspacePage() {
           memo={memoSuccess.memo}
           generationType="openai"
           researchWindowLabel={researchWindowLabel}
+        />
+      )}
+
+      {/* Post-memo: the memo is the primary output. The research card moves
+          below it and remounts (new key), which resets its expanded state to
+          collapsed. The compact counts row stays visible; full details and
+          warnings remain one click away. */}
+      {researchSuccess && memoSuccess && (
+        <ResearchFindingsCard
+          key="post-memo"
+          research={researchSuccess.research}
         />
       )}
 
