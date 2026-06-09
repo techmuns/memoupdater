@@ -116,6 +116,10 @@ export interface FollowUpMemo {
   // Single sink for residual manual-check items, rendered once at the
   // foot of the memo. Replaces per-section "Needs manual verification."
   manualChecksRemaining?: string[];
+  // Phase 5C: tag the build path. "llm" = OpenAI generation, "demo" =
+  // fixture, "deterministic" = client-side fallback built from research
+  // findings. UI uses this to render the fallback banner.
+  sourceMode?: FollowUpMemoSourceMode;
 }
 
 export type GenerationStepStatus = "not_started" | "ready" | "demo_generated";
@@ -323,6 +327,12 @@ export interface GenerateFollowUpMemoRequest {
   detection?: ResearchDetectionInput;
   generationOptions?: {
     maxTokens?: number;
+    // Phase 5C: when true, the worker uses trimRequestBodyCompact (8k
+    // initial memo, 12 findings, 4 sources/finding, etc.) and clamps the
+    // max output tokens to a lower ceiling. The worker also auto-trips
+    // this branch pre-call when the assembled default prompt exceeds the
+    // safe size threshold — see worker/index.ts.
+    compact?: boolean;
   };
 }
 
@@ -356,6 +366,14 @@ export interface PeriodDetectionResult {
   researchCurrent: string;
   confidence: DetectionConfidence;
   assumptionNotes: string[];
+  // Phase 5C: ticker pulled from "HAVL IN", "NSE: HAVELLS", "Ticker: …"
+  // etc. — used as a trailing chip in the header + as a tiebreaker for
+  // company detection. Confidence + reason are populated by the
+  // company-detection heuristic so the PeriodPanel can prompt the user
+  // to confirm when the detector isn't sure.
+  detectedTicker?: string;
+  companyDetectionConfidence?: DetectionConfidence;
+  companyDetectionReason?: string;
 }
 
 export interface ResearchDetectionInput {

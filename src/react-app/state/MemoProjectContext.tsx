@@ -34,6 +34,7 @@ import {
 } from "../lib/fileMeta";
 import { buildMemoDnaFromText } from "../lib/memoDna";
 import { detectPeriodFromMemoText } from "../lib/periodDetect";
+import { buildFallbackMemo } from "../lib/fallbackMemo";
 import { getLlmGateToken } from "../lib/llmGateToken";
 
 const GATE_TOKEN_POLL_KEY = "memo.llm.gate";
@@ -166,6 +167,8 @@ interface MemoProjectContextValue {
   setPeriodOverride: (override: PeriodOverride) => void;
   runResearch: () => Promise<void>;
   generateMemo: (withResearch: boolean) => Promise<void>;
+  retryGenerationCompact: () => Promise<void>;
+  useFallbackMemo: () => void;
   refreshLlmProviderStatus: () => Promise<void>;
   syncGateTokenSet: () => void;
   startOver: () => void;
@@ -349,8 +352,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     state.periodOverride,
   ]);
 
-  const generateMemo = useCallback(
-    async (withResearch: boolean): Promise<void> => {
+  const runGenerate = useCallback(
+    async (withResearch: boolean, compact: boolean): Promise<void> => {
       if (!state.dna || !state.extraction || !state.initialFile) return;
       const companyName =
         state.periodOverride.detectedCompany ??
@@ -385,6 +388,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
               assumptionNotes: state.detection?.assumptionNotes ?? [],
             }
           : undefined,
+        generationOptions: compact ? { compact: true } : undefined,
       };
 
       generateAbort.current?.abort();
@@ -425,7 +429,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
         : { code: "provider_error", message: networkMessage || "Network error" };
       dispatch({
         type: "SET_LLM_STATE",
-        state: { kind: "error", error: warning.message },
+        state: { kind: "error", error: `${warning.code} · ${warning.message}` },
       });
     },
     [
@@ -437,6 +441,54 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       state.periodOverride,
     ],
   );
+
+  const generateMemo = useCallback(
+    (withResearch: boolean): Promise<void> => runGenerate(withResearch, false),
+    [runGenerate],
+  );
+
+  const retryGenerationCompact = useCallback(
+    (): Promise<void> => runGenerate(Boolean(state.research), true),
+    [runGenerate, state.research],
+  );
+
+  const useFallbackMemo = useCallback((): void => {
+    if (!state.dna || !state.research) return;
+    const companyName =
+      state.periodOverride.detectedCompany ??
+      state.detection?.detectedCompany ??
+      state.initialFile?.filename.replace(/\.[^.]+$/, "") ??
+      "Company";
+    const memo = buildFallbackMemo({
+      project: {
+        id: state.dna.projectId,
+        companyName,
+      },
+      dna: state.dna,
+      research: state.research,
+      generatedAt: new Date().toISOString(),
+    });
+    dispatch({ type: "SET_GENERATED_MEMO", memo });
+    dispatch({
+      type: "SET_LLM_STATE",
+      state: {
+        kind: "success",
+        memo,
+        providerMetadata: {
+          providerName: "none",
+          modelUsed: "fallback-from-research",
+        },
+        usedFallback: true,
+        warnings: [],
+      },
+    });
+  }, [
+    state.dna,
+    state.research,
+    state.detection,
+    state.initialFile,
+    state.periodOverride,
+  ]);
 
   const startOver = useCallback(() => {
     researchAbort.current?.abort();
@@ -471,6 +523,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       setPeriodOverride,
       runResearch,
       generateMemo,
+      retryGenerationCompact,
+      useFallbackMemo,
       refreshLlmProviderStatus,
       syncGateTokenSet,
       startOver,
@@ -481,6 +535,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     setPeriodOverride,
     runResearch,
     generateMemo,
+    retryGenerationCompact,
+    useFallbackMemo,
     refreshLlmProviderStatus,
     syncGateTokenSet,
     startOver,

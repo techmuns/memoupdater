@@ -47,19 +47,28 @@ export function MemoReview({
     timeStyle: "short",
   });
 
-  const typeBadge =
-    generationType === "openai" ? (
-      <Badge tone="success" dot>
-        OpenAI research memo
-      </Badge>
-    ) : (
-      <Badge tone="warning" dot>
-        Demo memo
-      </Badge>
-    );
+  const isFallback = memo.sourceMode === "deterministic";
+  const typeBadge = isFallback ? (
+    <Badge tone="warning" dot>
+      Fallback memo (research only)
+    </Badge>
+  ) : generationType === "openai" ? (
+    <Badge tone="success" dot>
+      OpenAI research memo
+    </Badge>
+  ) : (
+    <Badge tone="warning" dot>
+      Demo memo
+    </Badge>
+  );
 
   return (
     <div className="space-y-5">
+      {isFallback && (
+        <div className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-warning)_22%,white)] bg-[var(--color-warning-soft)] px-3 py-2.5 text-[12px] text-[var(--color-warning)] leading-relaxed">
+          Fallback memo from research findings — OpenAI generation was unavailable. Every section is marked low-confidence; human analyst sign-off required.
+        </div>
+      )}
       <header className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-sm)] px-6 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">

@@ -14,6 +14,7 @@ import type {
 } from "@shared/types";
 import { Badge } from "./ui/Badge";
 import { Panel } from "./ui/Panel";
+import { buildResearchSummary } from "../lib/researchSummary";
 
 const IMPACT_TONE: Record<ResearchFindingImpact, "success" | "warning" | "neutral" | "accent"> = {
   positive: "success",
@@ -54,76 +55,122 @@ interface ResearchFindingsCardProps {
 }
 
 export function ResearchFindingsCard({ research }: ResearchFindingsCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const summary = buildResearchSummary(research);
   return (
     <Panel
       eyebrow="Research findings"
       title={`${research.company} · ${research.researchWindow.startIsoMonth} → ${research.researchWindow.endIsoMonth}`}
       actions={
         <Badge tone="ink" dot>
-          {research.findings.length} finding{research.findings.length === 1 ? "" : "s"}
+          {summary.findings} finding{summary.findings === 1 ? "" : "s"}
         </Badge>
       }
     >
-      {research.thesisCheckpointImpact.length > 0 && (
-        <div className="mb-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5">
-          <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-subtle)] mb-1">
-            Thesis checkpoint impact
-          </div>
-          <ul className="space-y-1">
-            {research.thesisCheckpointImpact.map((c) => (
-              <li
-                key={c.checkpointId}
-                className="text-[12px] text-[var(--color-text)] leading-snug"
-              >
-                <span className="font-mono text-[11px] text-[var(--color-text-muted)]">
-                  {c.checkpointId}
-                </span>{" "}
-                <CheckpointImpactBadge impact={c.impact} /> {c.note}
-              </li>
-            ))}
-          </ul>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-[var(--color-text-muted)]">
+        <span>
+          <span className="text-[var(--color-success)] font-semibold">{summary.positive}</span> positive
+        </span>
+        <span>
+          <span className="text-[var(--color-warning)] font-semibold">{summary.negative}</span> negative
+        </span>
+        <span>
+          <span className="font-semibold">{summary.watch}</span> watch
+        </span>
+        <span>
+          <span className="font-semibold">{summary.unresolved}</span> unresolved
+        </span>
+        {summary.warnings > 0 && (
+          <span>
+            <span className="text-[var(--color-warning)] font-semibold">{summary.warnings}</span> warning{summary.warnings === 1 ? "" : "s"}
+          </span>
+        )}
+        <span>
+          <span className="font-semibold">{summary.verifiedSourceFindings}</span>/{summary.findings} web-verified
+        </span>
+        {(summary.checkpointsSupported + summary.checkpointsChallenged + summary.checkpointsNoUpdate) > 0 && (
+          <span>
+            checkpoints: {summary.checkpointsSupported}✓ · {summary.checkpointsChallenged}✗ · {summary.checkpointsNoUpdate}=
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--color-ink)] hover:underline"
+      >
+        {expanded ? (
+          <ChevronDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5" />
+        )}
+        {expanded ? "Hide research details" : "View research details"}
+      </button>
+
+      {expanded && (
+        <div className="mt-4">
+          {research.thesisCheckpointImpact.length > 0 && (
+            <div className="mb-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5">
+              <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-subtle)] mb-1">
+                Thesis checkpoint impact
+              </div>
+              <ul className="space-y-1">
+                {research.thesisCheckpointImpact.map((c) => (
+                  <li
+                    key={c.checkpointId}
+                    className="text-[12px] text-[var(--color-text)] leading-snug"
+                  >
+                    <span className="font-mono text-[11px] text-[var(--color-text-muted)]">
+                      {c.checkpointId}
+                    </span>{" "}
+                    <CheckpointImpactBadge impact={c.impact} /> {c.note}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {research.findings.length === 0 ? (
+            <p className="text-[12.5px] italic text-[var(--color-text-muted)]">
+              No findings emitted by the model.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {research.findings.map((f) => (
+                <FindingRow key={f.id} finding={f} />
+              ))}
+            </ul>
+          )}
+
+          {research.unresolvedQuestions.length > 0 && (
+            <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
+              <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-subtle)] mb-1">
+                Unresolved questions
+              </div>
+              <ul className="list-disc pl-5 space-y-1">
+                {research.unresolvedQuestions.map((q, i) => (
+                  <li key={i} className="text-[12px] text-[var(--color-text)]">
+                    {q}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {research.warnings.length > 0 && (
+            <ul className="mt-4 space-y-1.5">
+              {research.warnings.map((w, i) => (
+                <li
+                  key={i}
+                  className="text-[11.5px] text-[var(--color-warning)] inline-flex items-start gap-1.5 leading-snug"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{w}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
-
-      {research.findings.length === 0 ? (
-        <p className="text-[12.5px] italic text-[var(--color-text-muted)]">
-          No findings emitted by the model.
-        </p>
-      ) : (
-        <ul className="space-y-3">
-          {research.findings.map((f) => (
-            <FindingRow key={f.id} finding={f} />
-          ))}
-        </ul>
-      )}
-
-      {research.unresolvedQuestions.length > 0 && (
-        <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
-          <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-subtle)] mb-1">
-            Unresolved questions
-          </div>
-          <ul className="list-disc pl-5 space-y-1">
-            {research.unresolvedQuestions.map((q, i) => (
-              <li key={i} className="text-[12px] text-[var(--color-text)]">
-                {q}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {research.warnings.length > 0 && (
-        <ul className="mt-4 space-y-1.5">
-          {research.warnings.map((w, i) => (
-            <li
-              key={i}
-              className="text-[11.5px] text-[var(--color-warning)] inline-flex items-start gap-1.5 leading-snug"
-            >
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>{w}</span>
-            </li>
-          ))}
-        </ul>
       )}
     </Panel>
   );

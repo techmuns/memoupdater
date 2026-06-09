@@ -3,7 +3,7 @@ import type {
   DetectionConfidence,
   PeriodDetectionResult,
 } from "@shared/types";
-import { detectCompanyFromText } from "./memoDna";
+import { detectCompanyFromTextDetailed } from "./memoDna";
 
 // Deterministic period detection from memo text. NO silent FY/Q -> calendar
 // month conversion: fiscal-only candidates carry label fields and the
@@ -66,9 +66,12 @@ export function detectPeriodFromMemoText(
   const now = asOf instanceof Date ? asOf : new Date();
   const researchCurrent = isoMonthFromDate(now);
 
-  const detectedCompany = safeText.length > 0
-    ? detectCompanyFromText(safeText, "")
-    : undefined;
+  const companyDetection =
+    safeText.length > 0
+      ? detectCompanyFromTextDetailed(safeText, "")
+      : { company: undefined, ticker: undefined, confidence: "low" as const, reason: "" };
+  const detectedCompany = companyDetection.company;
+  const detectedTicker = companyDetection.ticker;
 
   const ranked: RankedCandidate[] = [];
 
@@ -258,6 +261,9 @@ export function detectPeriodFromMemoText(
     researchCurrent,
     confidence,
     assumptionNotes,
+    detectedTicker,
+    companyDetectionConfidence: companyDetection.confidence,
+    companyDetectionReason: companyDetection.reason || undefined,
   };
 }
 

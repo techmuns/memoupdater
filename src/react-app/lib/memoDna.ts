@@ -3,10 +3,9 @@ import {
   CATEGORY_LABEL,
   KEYWORDS,
   detectSector,
-  isPotentialTicker,
   type KeywordEntry,
 } from "./keywords";
-import { dedupe, splitParagraphs, splitSentences, topByFrequency, wordCount } from "./text";
+import { dedupe, splitParagraphs, splitSentences, wordCount } from "./text";
 
 interface BuildOptions {
   text: string;
@@ -19,7 +18,7 @@ export function buildMemoDnaFromText({ text, filename }: BuildOptions): MemoDNA 
   const lower = text.toLowerCase();
 
   const hits = scoreKeywords(text);
-  const company = detectCompany(text, filename);
+  const company = detectCompanyFromTextDetailed(text, filename).company;
   const sector = detectSector(text);
 
   const originalThesis = detectThesis(text, paragraphs, sentences, company);
@@ -75,28 +74,420 @@ export function buildMemoDnaFromText({ text, filename }: BuildOptions): MemoDNA 
 
 // ----- pieces -----
 
+export interface CompanyDetectionResult {
+  company?: string;
+  ticker?: string;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+}
+
+// Back-compat thin wrapper — many callers only want the string.
 export function detectCompanyFromText(
   text: string,
   filename: string,
 ): string | undefined {
-  return detectCompany(text, filename);
+  return detectCompanyFromTextDetailed(text, filename).company;
 }
 
-function detectCompany(text: string, filename: string): string | undefined {
-  const tokens = text.match(/\b[A-Z][A-Za-z0-9&'.-]{1,20}\b/g) ?? [];
-  const tickers = tokens.filter((t) => isPotentialTicker(t));
-  const tickerCounts = topByFrequency(tickers, 1);
-  if (tickerCounts[0] && tickerCounts[0].count >= 3) return tickerCounts[0].value;
+// Phase 5C: broker-aware, position-weighted company detection. The old
+// detector picked whichever ALL-CAPS token or title-case phrase repeated
+// most often, which made broker names ("JM Financial", "Morgan Stanley")
+// beat the actually-covered company on broker notes. The new detector:
+//   1. Pulls a ticker from NSE/BSE/Bloomberg/Ticker patterns.
+//   2. Builds a candidate pool of title-case phrases — including
+//      "<Name> Ltd/Limited/Inc/India" forms so "Havells India Ltd"
+//      beats bare "Havells".
+//   3. Filters candidates through token-subsequence broker exclusion.
+//      "JM" is excluded (subseq of "jm financial"); "ICICI Bank" is
+//      NOT excluded (icici-bank tokens are not a subseq of any broker
+//      canonical, nor vice-versa); "ICICI Securities" is excluded.
+//   4. Scores survivors with cover/body, suffix, reco-line, key-data,
+//      and ticker-line bonuses.
+//   5. Promotes the strongest survivor on the ticker's line if scores
+//      are otherwise weak.
+//   6. Falls back to the filename stem, but only after running the same
+//      broker exclusion + a generic-stopword filter against the stem
+//      tokens (so "Q4 FY26 broker memo.pdf" doesn't fabricate a
+//      company name).
+const COVER_CHAR_BUDGET = 1500;
 
-  // Multi-word capitalized phrase frequency
-  const phrases = text.match(/\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b/g) ?? [];
-  const phraseCounts = topByFrequency(phrases, 5);
-  const top = phraseCounts.find((p) => p.count >= 3);
-  if (top) return top.value;
+const BROKER_CANONICALS: readonly string[] = [
+  "jm financial institutional securities",
+  "jm financial",
+  "morgan stanley",
+  "jefferies",
+  "goldman sachs",
+  "jp morgan",
+  "jpm",
+  "jpmorgan",
+  "ubs",
+  "citi",
+  "citigroup",
+  "clsa",
+  "motilal oswal",
+  "mosl",
+  "icici securities",
+  "icicidirect",
+  "hdfc securities",
+  "kotak institutional equities",
+  "kotak securities",
+  "kotak",
+  "axis capital",
+  "nuvama",
+  "edelweiss",
+  "iifl",
+  "emkay",
+  "antique stock broking",
+  "antique",
+  "systematix",
+  "ambit",
+  "sharekhan",
+  "anand rathi",
+  "religare",
+  "spark capital",
+  "centrum",
+  "elara",
+  "bnp paribas",
+  "macquarie",
+  "bernstein",
+  "bofa",
+  "bank of america",
+  "credit suisse",
+  "deutsche bank",
+  "daiwa",
+  "nomura",
+  "sbicap",
+];
 
-  // Fallback to filename stem
-  const stem = filename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
-  return stem.length > 0 ? stem : undefined;
+const BROKER_CANONICAL_TOKENS: readonly string[][] = BROKER_CANONICALS.map(
+  (b) => b.split(/\s+/),
+);
+
+const TICKER_REJECT = new Set([
+  "IN",
+  "EQUITY",
+  "INR",
+  "USD",
+  "EUR",
+  "GBP",
+  "JPY",
+  "CNY",
+  "HKD",
+  "JM",
+  "JPM",
+  "UBS",
+  "MOSL",
+  "CLSA",
+  "IIFL",
+  "HDFC",
+  "ICICI",
+  "BOFA",
+]);
+
+const FILENAME_GENERIC_STOPWORDS = new Set([
+  "memo",
+  "research",
+  "update",
+  "report",
+  "pdf",
+  "document",
+  "note",
+  "notes",
+  "cover",
+  "final",
+  "draft",
+  "output",
+  "investment",
+  "company",
+  "equity",
+  "result",
+  "quarterly",
+  "annual",
+  "untitled",
+  "download",
+  "file",
+  "q1",
+  "q2",
+  "q3",
+  "q4",
+  "fy",
+]);
+
+// Single-token leads that almost always indicate a fragment rather than
+// the actual company name. "Bank Ltd" / "Group Ltd" / "Holdings" — these
+// pop out of the title-case regex when scanning broker notes, and beat
+// the true company on score because every legit name ends with the same
+// suffix. Filtering them out before scoring keeps "ICICI Bank Ltd" from
+// being dethroned by "Bank Ltd".
+const NOUN_FRAGMENT_LEADS = new Set([
+  "bank",
+  "corp",
+  "corporation",
+  "group",
+  "ltd",
+  "limited",
+  "inc",
+  "company",
+  "holdings",
+  "industries",
+  "limitedresearch",
+]);
+
+export function detectCompanyFromTextDetailed(
+  text: string,
+  filename: string,
+): CompanyDetectionResult {
+  const safeText = typeof text === "string" ? text : "";
+  const safeFilename = typeof filename === "string" ? filename : "";
+
+  const ticker = extractTicker(safeText);
+
+  const cover = safeText.slice(0, COVER_CHAR_BUDGET);
+  const body = safeText.slice(COVER_CHAR_BUDGET);
+
+  // Candidate pool: ordinary title-case phrases + "<X> Ltd/Limited/Inc/India" forms.
+  const phraseSet = new Set<string>();
+  for (const m of safeText.match(
+    /\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b/g,
+  ) ?? []) {
+    phraseSet.add(m);
+  }
+  // matchAll → capture both the full suffixed form ("ICICI Bank Ltd") and
+  // the unsuffixed name ("ICICI Bank") so the scorer can compare. The
+  // suffixed form earns the +2 corporate-suffix bonus.
+  const ltdRe = /\b([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})\s+(?:Ltd|Limited|Inc|India)\b/g;
+  for (const m of safeText.matchAll(ltdRe)) {
+    if (m[0]) phraseSet.add(m[0]);
+    if (m[1]) phraseSet.add(m[1]);
+  }
+  const candidates = Array.from(phraseSet).filter(
+    (c) =>
+      !isBrokerPhrase(c) &&
+      !isGenericPhrase(c) &&
+      !isNounFragment(c),
+  );
+
+  const tickerLine = ticker ? findTickerLine(safeText, ticker) : "";
+
+  const scored = candidates
+    .map((c) => {
+      const score = scoreCandidate(c, cover, body, tickerLine);
+      return { candidate: c, score };
+    })
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  // Prefer phrases that explicitly carry a corporate-name suffix.
+  const top = scored[0];
+  const runnerUp = scored[1];
+
+  const brokersDetected = Array.from(phraseSet).filter((c) => isBrokerPhrase(c));
+  const brokerNote =
+    brokersDetected.length > 0
+      ? ` ${brokersDetected
+          .slice(0, 2)
+          .map((b) => `'${b}'`)
+          .join(", ")} excluded as broker.`
+      : "";
+
+  if (top && top.score >= 12 && (!runnerUp || top.score - runnerUp.score >= 6)) {
+    const lead = runnerUp ? top.score - runnerUp.score : top.score;
+    return {
+      company: top.candidate,
+      ticker,
+      confidence: "high",
+      reason: `'${top.candidate}' scored ${top.score} (lead ${lead}).${brokerNote}`,
+    };
+  }
+  if (top && ticker && tickerLine && tokenSubseq(tokenize(top.candidate), tokenize(tickerLine))) {
+    return {
+      company: top.candidate,
+      ticker,
+      confidence: "high",
+      reason: `'${top.candidate}' scored ${top.score}; appears on ticker line for ${ticker}.${brokerNote}`,
+    };
+  }
+  if (top && top.score >= 6) {
+    return {
+      company: top.candidate,
+      ticker,
+      confidence: "medium",
+      reason: `'${top.candidate}' scored ${top.score}.${brokerNote}`,
+    };
+  }
+  if (top) {
+    return {
+      company: top.candidate,
+      ticker,
+      confidence: "low",
+      reason: `'${top.candidate}' scored only ${top.score} — manual confirmation recommended.${brokerNote}`,
+    };
+  }
+
+  // Fallback to filename stem with safety filters.
+  const stem = safeFilename
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    stem.length >= 3 &&
+    !isBrokerPhrase(stem) &&
+    !isGenericPhrase(stem)
+  ) {
+    return {
+      company: stem,
+      ticker,
+      confidence: "low",
+      reason: `No strong in-text candidate; falling back to filename stem '${stem}'.${brokerNote}`,
+    };
+  }
+  return {
+    company: undefined,
+    ticker,
+    confidence: "low",
+    reason: `Filename fallback rejected (broker/generic/too short); manual confirmation needed.${brokerNote}`,
+  };
+}
+
+function tokenize(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+// Contiguous token-level sub-sequence test: are `a`'s tokens a window
+// inside `b`'s tokens?
+function tokenSubseq(a: string[], b: string[]): boolean {
+  if (a.length === 0 || b.length === 0) return false;
+  if (a.length > b.length) return false;
+  outer: for (let i = 0; i + a.length <= b.length; i++) {
+    for (let j = 0; j < a.length; j++) {
+      if (a[j] !== b[i + j]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
+function isBrokerPhrase(candidate: string): boolean {
+  const toks = tokenize(candidate);
+  if (toks.length === 0) return false;
+  for (const broker of BROKER_CANONICAL_TOKENS) {
+    if (toks.length === broker.length) {
+      let eq = true;
+      for (let i = 0; i < toks.length; i++) {
+        if (toks[i] !== broker[i]) {
+          eq = false;
+          break;
+        }
+      }
+      if (eq) return true;
+    }
+    if (tokenSubseq(toks, broker)) return true;
+    if (tokenSubseq(broker, toks)) return true;
+  }
+  return false;
+}
+
+function isGenericPhrase(candidate: string): boolean {
+  const toks = tokenize(candidate);
+  if (toks.length === 0) return true;
+  // All tokens stopwords → generic. (Single-token "Memo" → generic.)
+  return toks.every((t) => FILENAME_GENERIC_STOPWORDS.has(t));
+}
+
+function isNounFragment(candidate: string): boolean {
+  const toks = tokenize(candidate);
+  if (toks.length === 0) return false;
+  return NOUN_FRAGMENT_LEADS.has(toks[0]);
+}
+
+function countMatches(haystack: string, needle: string): number {
+  if (!needle || !haystack) return 0;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\b${escaped}\\b`, "g");
+  let count = 0;
+  while (re.exec(haystack) !== null) count += 1;
+  return count;
+}
+
+const RECO_RE = /\b(?:BUY|ADD|HOLD|REDUCE|SELL|Target\s+Price|Reco|Recommendation)\b/i;
+const KEY_DATA_RE = /\b(?:Key\s+Data|Company\s+Data|Stock\s+Data)\b/i;
+
+function scoreCandidate(
+  candidate: string,
+  cover: string,
+  body: string,
+  tickerLine: string,
+): number {
+  const coverCount = countMatches(cover, candidate);
+  const bodyCount = countMatches(body, candidate);
+  if (coverCount === 0 && bodyCount === 0) return 0;
+
+  let score = bodyCount * 2 + coverCount * 1;
+
+  if (/\b(?:Ltd|Limited|Inc|India)\b/.test(candidate)) score += 2;
+
+  // Reco-line proximity: scan for any window of 80 chars containing
+  // BOTH the candidate and a reco token.
+  const fullText = cover + body;
+  const re = new RegExp(
+    `\\b${candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+    "g",
+  );
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fullText)) !== null) {
+    const start = Math.max(0, m.index - 80);
+    const end = Math.min(fullText.length, m.index + candidate.length + 80);
+    const window = fullText.slice(start, end);
+    if (RECO_RE.test(window)) {
+      score += 3;
+      break;
+    }
+  }
+
+  if (KEY_DATA_RE.test(cover) && countMatches(cover, candidate) > 0) {
+    score += 2;
+  }
+
+  if (tickerLine && tokenSubseq(tokenize(candidate), tokenize(tickerLine))) {
+    score += 3;
+  }
+
+  return score;
+}
+
+const TICKER_PATTERNS: readonly RegExp[] = [
+  /\bNSE\s*[:-]\s*([A-Z][A-Z0-9&-]{1,11})\b/,
+  /\bBSE\s*[:-]\s*([A-Z0-9][A-Z0-9&-]{1,11})\b/,
+  /\b([A-Z]{2,10})\s+IN\s+Equity\b/,
+  /\b([A-Z]{2,10})\s+IN\b/,
+  /\b(?:Ticker|Symbol|BSE\s*Code|NSE\s*Code|Code)\s*[:-]\s*([A-Z0-9&-]{2,12})\b/i,
+];
+
+function extractTicker(text: string): string | undefined {
+  for (const re of TICKER_PATTERNS) {
+    const m = re.exec(text);
+    if (!m) continue;
+    const sym = m[1]?.toUpperCase();
+    if (!sym) continue;
+    if (TICKER_REJECT.has(sym)) continue;
+    return sym;
+  }
+  return undefined;
+}
+
+function findTickerLine(text: string, ticker: string): string {
+  if (!ticker) return "";
+  const lines = text.split(/\n/);
+  for (const ln of lines) {
+    if (ln.includes(ticker)) return ln;
+  }
+  return "";
 }
 
 const THESIS_HEADING =

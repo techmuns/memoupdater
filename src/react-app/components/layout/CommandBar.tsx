@@ -1,9 +1,32 @@
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, Plus, Cloud, CircleUser } from "lucide-react";
 import { Button } from "../ui/Button";
+import { useMemoProject } from "../../state/MemoProjectContext";
+import { deriveCommandBarValues } from "./commandBarState";
 
 export function CommandBar() {
   const navigate = useNavigate();
+  const { state } = useMemoProject();
+  const { projectLabel, trailingTicker, stageLabel, stageTone } =
+    deriveCommandBarValues({
+      detection: state.detection,
+      periodOverride: state.periodOverride,
+      extraction: state.extraction
+        ? { source: { filename: state.extraction.source.filename } }
+        : null,
+      dna: state.dna,
+      research: state.research,
+      researchState: state.researchState,
+      generatedMemo: state.generatedMemo,
+      llm: state.llm,
+    });
+
+  const stageDot =
+    stageTone === "success"
+      ? "bg-[var(--color-success)]"
+      : stageTone === "warning"
+        ? "bg-[var(--color-warning)]"
+        : "bg-[var(--color-text-subtle)]";
 
   return (
     <header className="h-14 shrink-0 sticky top-0 z-30 bg-[var(--color-surface)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--color-surface)]/80 border-b border-[var(--color-border)]">
@@ -24,15 +47,11 @@ export function CommandBar() {
 
         <CommandChip
           label="Project"
-          value="RateGain Travel Technologies"
-          trailing="RATEGAIN"
+          value={projectLabel}
+          trailing={trailingTicker}
         />
         <ChevronRight className="w-3 h-3 text-[var(--color-text-subtle)]" />
-        <CommandChip
-          label="Stage"
-          value="Phase 1 · Demo"
-          dot="bg-[var(--color-warning)]"
-        />
+        <CommandChip label="Stage" value={stageLabel} dot={stageDot} />
         <CommandChip
           label="Deploy"
           value="CF Workers"

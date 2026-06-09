@@ -15,14 +15,28 @@ export function PeriodPanel() {
   const eff = effectiveDetection;
   if (!detection || !eff) return null;
 
+  const ticker = detection.detectedTicker;
+  const companyConfidence = detection.companyDetectionConfidence;
+  const companyReason = detection.companyDetectionReason;
+  const showCompanyHint =
+    Boolean(companyReason) &&
+    (companyConfidence === "medium" || companyConfidence === "low");
+
   return (
     <Panel
       eyebrow="Step 2"
       title="Detected memo period"
       actions={
-        <Badge tone={CONFIDENCE_TONE[detection.confidence]} dot>
-          {detection.confidence} confidence
-        </Badge>
+        <div className="flex items-center gap-2">
+          {ticker && (
+            <Badge tone="neutral">
+              <span className="font-mono">{ticker}</span>
+            </Badge>
+          )}
+          <Badge tone={CONFIDENCE_TONE[detection.confidence]} dot>
+            {detection.confidence} confidence
+          </Badge>
+        </div>
       }
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -52,6 +66,12 @@ export function PeriodPanel() {
           monospace
         />
       </div>
+
+      {showCompanyHint && (
+        <p className="mt-3 text-[11.5px] text-[var(--color-text-muted)] leading-snug">
+          Company detector: {companyReason} Please confirm the company name above.
+        </p>
+      )}
 
       {eff.assumptionNotes.length > 0 && (
         <ul className="mt-4 space-y-1.5">

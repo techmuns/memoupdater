@@ -28,6 +28,8 @@ export function WorkspacePage() {
     extractInitialMemo,
     runResearch,
     generateMemo,
+    retryGenerationCompact,
+    useFallbackMemo,
     startOver,
   } = useMemoProject();
 
@@ -253,7 +255,13 @@ export function WorkspacePage() {
           )}
 
           {memoError && (
-            <ErrorBanner code="provider_error" message={memoError.error} />
+            <MemoErrorBanner
+              detail={memoError.error}
+              onRetryCompact={() => void retryGenerationCompact()}
+              canFallback={Boolean(state.research)}
+              onFallback={useFallbackMemo}
+              disabled={memoLoading}
+            />
           )}
         </Panel>
       )}
@@ -324,6 +332,65 @@ function ErrorBanner({ code, message }: { code: string; message: string }) {
           {message}
         </p>
       </div>
+    </div>
+  );
+}
+
+// Memo-specific error banner: friendly headline matched to the error
+// code, original "code · message" preserved as a muted detail row, and
+// two recovery actions (compact retry + research-only fallback).
+function MemoErrorBanner({
+  detail,
+  onRetryCompact,
+  canFallback,
+  onFallback,
+  disabled,
+}: {
+  detail: string;
+  onRetryCompact: () => void;
+  canFallback: boolean;
+  onFallback: () => void;
+  disabled: boolean;
+}) {
+  const lower = detail.toLowerCase();
+  const headline = lower.includes("timeout")
+    ? "OpenAI memo generation timed out. Retry with a shorter prompt, or generate a compact fallback memo from the research findings."
+    : lower.includes("rate_limited") || lower.includes("rate limit")
+      ? "OpenAI rate-limited the request. Retry in a few seconds, or generate a compact fallback memo."
+      : lower.includes("parse_error") || lower.includes("schema")
+        ? "OpenAI returned a memo that didn't match the schema. Retry with a shorter prompt, or generate a compact fallback memo."
+        : "Memo generation failed. Retry compact, or generate a compact fallback memo.";
+  return (
+    <div className="mt-4 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-warning)_22%,white)] bg-[var(--color-warning-soft)] px-3 py-2.5">
+      <div className="flex items-start gap-2">
+        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-warning)]" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[12.5px] font-semibold text-[var(--color-warning)] leading-snug">
+            {headline}
+          </div>
+          <p className="text-[11px] text-[var(--color-text-muted)] mt-1 leading-snug font-mono">
+            {detail}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button size="sm" onClick={onRetryCompact} disabled={disabled}>
+          Retry compact
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onFallback}
+          disabled={disabled || !canFallback}
+        >
+          Generate compact fallback
+        </Button>
+      </div>
+      {!canFallback && (
+        <p className="mt-2 text-[11px] text-[var(--color-text-muted)] leading-snug">
+          Fallback requires a successful research run first.
+        </p>
+      )}
     </div>
   );
 }

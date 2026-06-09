@@ -30,6 +30,7 @@ import type {
   LlmProviderName,
   LlmStatusResponse,
 } from "@shared/types";
+import type { LlmGenerationWarning } from "@shared/types";
 import {
   checkGateToken,
   evaluateLlmReadiness,
@@ -37,14 +38,23 @@ import {
 } from "./llm/provider";
 import { buildPrompt } from "./llm/prompt";
 import { FOLLOW_UP_MEMO_TOOL_SCHEMA, parseLlmJson } from "./llm/parse";
-import { trimRequestBody } from "./llm/trim";
+import { trimRequestBody, trimRequestBodyCompact } from "./llm/trim";
 import { handleResearchUpdates } from "./research/route";
 
 const app = new Hono<{ Bindings: Env }>();
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
-const DEFAULT_MAX_OUTPUT_TOKENS = 8000;
+// Phase 5C: lowered from 8 000 → 5 000 to keep gpt-5.2 well clear of
+// timeouts on broker-note-sized memos. Compact mode clamps tighter.
+const DEFAULT_MAX_OUTPUT_TOKENS = 5_000;
+const COMPACT_MAX_OUTPUT_TOKENS = 3_500;
 const HARD_MAX_OUTPUT_TOKENS = 12_000;
+// Phase 5C: pre-call auto-compact guard. If the default-trim assembled
+// prompt exceeds this size (rough heuristic ~45k input tokens for
+// gpt-5.2), the worker rebuilds the request with trimRequestBodyCompact
+// and reprompts ONCE before calling the provider. No second OpenAI call
+// is ever issued from this branch.
+const MAX_PROMPT_CHARS_SAFE = 180_000;
 const MAX_UPDATE_DOCS = 12;
 const GATE_HEADER = "x-memo-llm-gate";
 
@@ -169,8 +179,18 @@ app.post("/api/generate/follow-up-memo", async (c) => {
     );
   }
 
-  const request = trimRequestBody(validation.value);
-  const maxTokens = clampMaxTokens(request.generationOptions?.maxTokens);
+  // Phase 5C: strict-boolean compact validation. Non-boolean values are
+  // safely treated as false; we never fail the request for a bad flag.
+  const rawCompact = validation.value.generationOptions?.compact;
+  const compactRequested = rawCompact === true;
+  let usedCompact = compactRequested;
+  let request = compactRequested
+    ? trimRequestBodyCompact(validation.value)
+    : trimRequestBody(validation.value);
+  let maxTokens = compactRequested
+    ? COMPACT_MAX_OUTPUT_TOKENS
+    : clampMaxTokens(request.generationOptions?.maxTokens);
+  const extraWarnings: LlmGenerationWarning[] = [];
 
   // Wrap the post-validation pipeline in a try/catch so any unexpected
   // error becomes a graceful provider_error rather than HTTP 500 — the
@@ -178,15 +198,42 @@ app.post("/api/generate/follow-up-memo", async (c) => {
   // research" path. Never logs the underlying error message (may contain
   // user payload).
   try {
-    const { system, user, jsonSchema } = buildPrompt(
-      request,
-      FOLLOW_UP_MEMO_TOOL_SCHEMA,
+    let prompt = buildPrompt(request, FOLLOW_UP_MEMO_TOOL_SCHEMA);
+    const initialSize = prompt.system.length + prompt.user.length;
+
+    // Phase 5C: pre-call auto-compact. Single OpenAI call always — this
+    // is a rebuild-and-prompt branch, not an auto-retry.
+    let autoCompacted = false;
+    if (!usedCompact && initialSize > MAX_PROMPT_CHARS_SAFE) {
+      autoCompacted = true;
+      usedCompact = true;
+      request = trimRequestBodyCompact(validation.value);
+      maxTokens = COMPACT_MAX_OUTPUT_TOKENS;
+      prompt = buildPrompt(request, FOLLOW_UP_MEMO_TOOL_SCHEMA);
+      extraWarnings.push({
+        code: "schema_warning",
+        message:
+          "Auto-compacted memo request before provider call: assembled prompt exceeded safe size threshold.",
+      });
+    }
+
+    console.log(
+      JSON.stringify({
+        event: "llm_generate_compact",
+        auto: autoCompacted,
+        compactRequested,
+        systemLen: prompt.system.length,
+        userLen: prompt.user.length,
+        findings: request.research?.findings.length ?? 0,
+        maxTokens,
+        model: readiness.model,
+      }),
     );
 
     const result = await provider.generate({
-      system,
-      user,
-      jsonSchema,
+      system: prompt.system,
+      user: prompt.user,
+      jsonSchema: prompt.jsonSchema,
       maxTokens,
       abortSignal: c.req.raw.signal,
     });
@@ -215,16 +262,17 @@ app.post("/api/generate/follow-up-memo", async (c) => {
       );
     }
 
+    const memo = { ...parsedMemo.memo, sourceMode: "llm" as const };
     const body: GenerateFollowUpMemoResponse = {
       ok: true,
-      memo: parsedMemo.memo,
+      memo,
       providerMetadata: {
         providerName: result.providerName,
         modelUsed: result.modelUsed,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
       },
-      warnings: parsedMemo.warnings,
+      warnings: [...extraWarnings, ...parsedMemo.warnings],
     };
     return c.json(body);
   } catch {
