@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import {
   AlertCircle,
   ArrowRight,
+  Check,
+  Circle,
   Loader2,
   Lock,
   RefreshCw,
@@ -10,6 +12,7 @@ import {
   Sparkles,
   UploadCloud,
 } from "lucide-react";
+import type { SectionRunState } from "@shared/types";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Panel } from "../components/ui/Panel";
@@ -28,8 +31,8 @@ export function WorkspacePage() {
     extractInitialMemo,
     runResearch,
     generateMemo,
-    retryGenerationCompact,
-    useFallbackMemo,
+    retryFailedSection,
+    retryFullMemo,
     startOver,
   } = useMemoProject();
 
@@ -254,12 +257,17 @@ export function WorkspacePage() {
             </p>
           )}
 
-          {memoError && (
-            <MemoErrorBanner
+          {(memoLoading || memoError) && (
+            <SectionProgressList sections={state.progress.sections} />
+          )}
+
+          {memoError && state.progress.failedSectionId && (
+            <SectionFailureBanner
+              sectionId={state.progress.failedSectionId}
+              sections={state.progress.sections}
               detail={memoError.error}
-              onRetryCompact={() => void retryGenerationCompact()}
-              canFallback={Boolean(state.research)}
-              onFallback={useFallbackMemo}
+              onRetryFailed={() => void retryFailedSection()}
+              onRetryFull={() => void retryFullMemo()}
               disabled={memoLoading}
             />
           )}
@@ -336,30 +344,97 @@ function ErrorBanner({ code, message }: { code: string; message: string }) {
   );
 }
 
-// Memo-specific error banner: friendly headline matched to the error
-// code, original "code · message" preserved as a muted detail row, and
-// two recovery actions (compact retry + research-only fallback).
-function MemoErrorBanner({
+// Phase 5D: 9-row per-section progress list shown while generation is
+// running OR after a failure (so the user sees which sections completed,
+// which one broke, and what's still pending).
+function SectionProgressList({ sections }: { sections: SectionRunState[] }) {
+  const total = sections.length;
+  const completed = sections.filter((s) => s.status === "success").length;
+  const running = sections.find((s) => s.status === "running");
+  const failed = sections.find((s) => s.status === "failed");
+  const headline = running
+    ? `Generating section ${sections.indexOf(running) + 1} of ${total} — ${running.title}`
+    : failed
+      ? `Section ${sections.indexOf(failed) + 1} of ${total} failed — ${failed.title}`
+      : `${completed} of ${total} sections complete`;
+  return (
+    <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
+      <div className="text-[12.5px] font-semibold text-[var(--color-text)] mb-2">
+        {headline}
+      </div>
+      <ol className="space-y-1.5">
+        {sections.map((s, i) => (
+          <li
+            key={s.id}
+            className="flex items-center gap-2 text-[12px] text-[var(--color-text)]"
+          >
+            <span className="w-4 inline-flex justify-center">
+              {s.status === "success" ? (
+                <Check className="w-3.5 h-3.5 text-[var(--color-success)]" />
+              ) : s.status === "running" ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--color-ink)]" />
+              ) : s.status === "failed" ? (
+                <AlertCircle className="w-3.5 h-3.5 text-[var(--color-warning)]" />
+              ) : (
+                <Circle className="w-3 h-3 text-[var(--color-text-subtle)]" />
+              )}
+            </span>
+            <span className="tnum w-5 text-right text-[var(--color-text-subtle)]">
+              {String(i + 1).padStart(2, "0")}
+            </span>
+            <span
+              className={
+                s.status === "pending"
+                  ? "text-[var(--color-text-subtle)]"
+                  : ""
+              }
+            >
+              {s.title}
+            </span>
+            {s.status === "running" && s.attempt === 2 && (
+              <span className="text-[10.5px] text-[var(--color-text-subtle)]">
+                · retrying (compact)
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+// Phase 5D: section-failure banner. Replaces the Phase 5C MemoErrorBanner.
+// No fallback button — failure offers only "Retry failed section" (resumes
+// from the failed section, preserving completed ones) or "Retry full memo"
+// (re-runs all 9 sections).
+function SectionFailureBanner({
+  sectionId,
+  sections,
   detail,
-  onRetryCompact,
-  canFallback,
-  onFallback,
+  onRetryFailed,
+  onRetryFull,
   disabled,
 }: {
+  sectionId: string;
+  sections: SectionRunState[];
   detail: string;
-  onRetryCompact: () => void;
-  canFallback: boolean;
-  onFallback: () => void;
+  onRetryFailed: () => void;
+  onRetryFull: () => void;
   disabled: boolean;
 }) {
+  const idx = sections.findIndex((s) => s.id === sectionId);
+  const failed = idx >= 0 ? sections[idx] : null;
+  const sectionNumber = idx >= 0 ? idx + 1 : 0;
+  const sectionTitle = failed?.title ?? "unknown section";
+  const headline = `Memo generation failed while drafting Section ${sectionNumber}: ${sectionTitle}.`;
   const lower = detail.toLowerCase();
-  const headline = lower.includes("timeout")
-    ? "OpenAI memo generation timed out. Retry with a shorter prompt, or generate a compact fallback memo from the research findings."
-    : lower.includes("rate_limited") || lower.includes("rate limit")
-      ? "OpenAI rate-limited the request. Retry in a few seconds, or generate a compact fallback memo."
-      : lower.includes("parse_error") || lower.includes("schema")
-        ? "OpenAI returned a memo that didn't match the schema. Retry with a shorter prompt, or generate a compact fallback memo."
-        : "Memo generation failed. Retry compact, or generate a compact fallback memo.";
+  const hint = lower.includes("rate_limited") || lower.includes("rate limit")
+    ? "OpenAI rate-limited the request; wait ~10 s before retrying."
+    : lower.includes("timeout")
+      ? "The section call exceeded the 60 s limit. Retrying with a tighter prompt is automatic; if it failed twice, the network may be slow."
+      : lower.includes("parse")
+        ? "OpenAI returned a section that didn't match the schema. Retrying with a tighter prompt usually fixes this."
+        : null;
   return (
     <div className="mt-4 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-warning)_22%,white)] bg-[var(--color-warning-soft)] px-3 py-2.5">
       <div className="flex items-start gap-2">
@@ -368,29 +443,29 @@ function MemoErrorBanner({
           <div className="text-[12.5px] font-semibold text-[var(--color-warning)] leading-snug">
             {headline}
           </div>
+          {hint && (
+            <p className="text-[11.5px] text-[var(--color-warning)] mt-1 leading-snug">
+              {hint}
+            </p>
+          )}
           <p className="text-[11px] text-[var(--color-text-muted)] mt-1 leading-snug font-mono">
             {detail}
           </p>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" onClick={onRetryCompact} disabled={disabled}>
-          Retry compact
+        <Button size="sm" onClick={onRetryFailed} disabled={disabled}>
+          Retry failed section
         </Button>
         <Button
           size="sm"
           variant="outline"
-          onClick={onFallback}
-          disabled={disabled || !canFallback}
+          onClick={onRetryFull}
+          disabled={disabled}
         >
-          Generate compact fallback
+          Retry full memo
         </Button>
       </div>
-      {!canFallback && (
-        <p className="mt-2 text-[11px] text-[var(--color-text-muted)] leading-snug">
-          Fallback requires a successful research run first.
-        </p>
-      )}
     </div>
   );
 }

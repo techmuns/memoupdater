@@ -1,4 +1,5 @@
 import type {
+  CanonicalSectionId,
   FinancialBridgeRow,
   FollowUpMemo,
   GenerateFollowUpMemoRequest,
@@ -8,6 +9,7 @@ import type {
   MemoSectionSignal,
   SourceReference,
 } from "@shared/types";
+import { CANONICAL_SECTION_TITLES } from "./sectionPrompt";
 
 const CANONICAL_SECTION_IDS = [
   "sec_thesis_snapshot",
@@ -292,6 +294,60 @@ function parseBridge(value: unknown): FinancialBridgeRow[] | undefined {
     rows.push(row);
   }
   return rows.length > 0 ? rows : undefined;
+}
+
+export type ParseSectionJsonResult =
+  | { ok: true; section: MemoSection; warnings: LlmGenerationWarning[] }
+  | { ok: false; code: "malformed_output"; message: string };
+
+// Phase 5D: parse a single MemoSection JSON object emitted by the per-section
+// endpoint. Differs from parseLlmJson (full-memo) in that it expects ONE
+// section, validates the id matches the requested one, and falls back to the
+// canonical title when the model omits it.
+export function parseSectionJson(
+  input: unknown,
+  expectedId: CanonicalSectionId,
+  allowedDocumentIds: Set<string>,
+): ParseSectionJsonResult {
+  const warnings: LlmGenerationWarning[] = [];
+  if (!isPlainObject(input)) {
+    return fail("Section output is not an object");
+  }
+  const idVal = input.id;
+  if (typeof idVal !== "string" || !isCanonicalId(idVal)) {
+    return fail(`Section has unknown id: ${String(idVal)}`);
+  }
+  if (idVal !== expectedId) {
+    return fail(`Expected section id "${expectedId}" but got "${idVal}"`);
+  }
+  const title =
+    typeof input.title === "string" && input.title.trim()
+      ? input.title
+      : CANONICAL_SECTION_TITLES[expectedId];
+  const summary = typeof input.summary === "string" ? input.summary : "";
+  const body = typeof input.body === "string" ? input.body : "";
+  const bullets = Array.isArray(input.bullets)
+    ? input.bullets.filter((b): b is string => typeof b === "string")
+    : [];
+  const signal = parseSignal(input.signal);
+  const sources = parseSources(input.sources, allowedDocumentIds, expectedId, warnings);
+  const section: MemoSection = {
+    id: expectedId,
+    title,
+    body,
+    sources,
+    summary,
+    bullets,
+    signal,
+  };
+  if (typeof input.confidenceNote === "string") {
+    section.confidenceNote = input.confidenceNote;
+  }
+  const confidence = parseConfidence(input.confidence);
+  if (confidence) section.confidence = confidence;
+  const bridge = parseBridge(input.bridge);
+  if (bridge) section.bridge = bridge;
+  return { ok: true, section, warnings };
 }
 
 function parseSection(

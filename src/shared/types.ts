@@ -556,3 +556,80 @@ export type LlmGenerationState =
       warnings: LlmGenerationWarning[];
     }
   | { kind: "error"; error: string };
+
+// ---------- Phase 5D additions: section-by-section memo generation ----------
+
+export type CanonicalSectionId =
+  | "sec_thesis_snapshot"
+  | "sec_q4_retest"
+  | "sec_mgmt_retest"
+  | "sec_ai_macro_risk"
+  | "sec_memo_held"
+  | "sec_memo_broke"
+  | "sec_eps_bridge"
+  | "sec_valuation_peer_gap"
+  | "sec_final_action";
+
+export interface MemoSectionDigestEntry {
+  id: CanonicalSectionId;
+  signal: MemoSectionSignal;
+  confidence?: MemoConfidence;
+  summary: string;
+  topBullets: string[];
+}
+
+export interface GenerateMemoSectionRequest {
+  sectionId: CanonicalSectionId;
+  project: {
+    id: string;
+    ticker: string;
+    companyName: string;
+    sector?: string;
+  };
+  dna: MemoDNA;
+  detection?: ResearchDetectionInput;
+  relevantFindings: ResearchFinding[];
+  relevantCheckpointImpacts?: ResearchThesisCheckpointImpact[];
+  positiveDevelopmentIds?: string[];
+  negativeDevelopmentIds?: string[];
+  watchDevelopmentIds?: string[];
+  styleSample?: string[];
+  initialMemoId?: string;
+  priorSectionsDigest?: MemoSectionDigestEntry[];
+  retryCompact?: boolean;
+}
+
+export type GenerateMemoSectionResponse =
+  | {
+      ok: true;
+      section: MemoSection;
+      providerMetadata: LlmProviderMetadata;
+      warnings: LlmGenerationWarning[];
+    }
+  | {
+      ok: false;
+      code: LlmGenerationErrorCode;
+      message: string;
+      providerName?: LlmProviderName;
+      modelUsed?: string;
+      sectionId: CanonicalSectionId;
+    };
+
+export type SectionRunStatus = "pending" | "running" | "success" | "failed";
+
+export interface SectionRunState {
+  id: CanonicalSectionId;
+  title: string;
+  status: SectionRunStatus;
+  attempt: 0 | 1 | 2;
+  errorCode?: LlmGenerationErrorCode;
+  errorMessage?: string;
+}
+
+export interface MemoGenerationProgress {
+  kind: "idle" | "running" | "complete" | "failed";
+  startedAt?: string;
+  sections: SectionRunState[];
+  completedCount: number;
+  failedSectionId?: CanonicalSectionId;
+}

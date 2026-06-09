@@ -9,21 +9,23 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  CanonicalSectionId,
   ExtractionResult,
   ExtractionStatus,
   FollowUpMemo,
-  GenerateFollowUpMemoRequest,
-  GenerateFollowUpMemoResponse,
+  LlmGenerationErrorCode,
   LlmGenerationState,
-  LlmGenerationWarning,
   LlmStatusResponse,
   LocalUploadedFile,
   MemoDNA,
+  MemoGenerationProgress,
+  MemoSection,
   PeriodDetectionResult,
   ResearchFindings,
   ResearchGenerationState,
   ResearchUpdatesRequest,
   ResearchUpdatesResponse,
+  SectionRunState,
 } from "@shared/types";
 import { api } from "../lib/api";
 import { extractText } from "../lib/extract";
@@ -34,7 +36,11 @@ import {
 } from "../lib/fileMeta";
 import { buildMemoDnaFromText } from "../lib/memoDna";
 import { detectPeriodFromMemoText } from "../lib/periodDetect";
-import { buildFallbackMemo } from "../lib/fallbackMemo";
+import {
+  CANONICAL_SECTION_IDS,
+  SECTION_TITLES,
+  runSectionGeneration,
+} from "../lib/sectionGeneration";
 import { getLlmGateToken } from "../lib/llmGateToken";
 
 const GATE_TOKEN_POLL_KEY = "memo.llm.gate";
@@ -56,6 +62,8 @@ interface State {
   researchState: ResearchGenerationState;
   generatedMemo: FollowUpMemo | null;
   llm: LlmGenerationState;
+  progress: MemoGenerationProgress;
+  completedSections: Partial<Record<CanonicalSectionId, MemoSection>>;
   llmProviderStatus: LlmStatusResponse | null;
   demoFollowUpMemo: FollowUpMemo | null;
   gateTokenSet: boolean;
@@ -75,10 +83,33 @@ type Action =
   | { type: "SET_RESEARCH"; research: ResearchFindings | null }
   | { type: "SET_LLM_STATE"; state: LlmGenerationState }
   | { type: "SET_GENERATED_MEMO"; memo: FollowUpMemo | null }
+  | { type: "START_GENERATION"; startedAt: string; resumeFromIdx: number }
+  | { type: "SECTION_STARTED"; sectionId: CanonicalSectionId; attempt: 1 | 2 }
+  | { type: "SECTION_SUCCESS"; sectionId: CanonicalSectionId; section: MemoSection }
+  | {
+      type: "SECTION_FAILED";
+      sectionId: CanonicalSectionId;
+      code: LlmGenerationErrorCode;
+      message: string;
+    }
+  | { type: "RESET_PROGRESS" }
   | { type: "SET_LLM_PROVIDER_STATUS"; status: LlmStatusResponse | null }
   | { type: "SET_DEMO_MEMO"; memo: FollowUpMemo | null }
   | { type: "SET_GATE_TOKEN_SET"; value: boolean }
   | { type: "RESET" };
+
+function buildInitialProgress(): MemoGenerationProgress {
+  return {
+    kind: "idle",
+    sections: CANONICAL_SECTION_IDS.map<SectionRunState>((id) => ({
+      id,
+      title: SECTION_TITLES[id],
+      status: "pending",
+      attempt: 0,
+    })),
+    completedCount: 0,
+  };
+}
 
 const initialState: State = {
   initialFile: null,
@@ -91,6 +122,8 @@ const initialState: State = {
   researchState: { kind: "idle" },
   generatedMemo: null,
   llm: { kind: "idle" },
+  progress: buildInitialProgress(),
+  completedSections: {},
   llmProviderStatus: null,
   demoFollowUpMemo: null,
   gateTokenSet: false,
@@ -124,6 +157,8 @@ function reducer(state: State, action: Action): State {
         researchState: { kind: "idle" },
         generatedMemo: null,
         llm: { kind: "idle" },
+        progress: buildInitialProgress(),
+        completedSections: {},
       };
     case "SET_PERIOD_OVERRIDE":
       return {
@@ -138,6 +173,90 @@ function reducer(state: State, action: Action): State {
       return { ...state, llm: action.state };
     case "SET_GENERATED_MEMO":
       return { ...state, generatedMemo: action.memo };
+    case "START_GENERATION": {
+      const fresh = buildInitialProgress();
+      const sections = fresh.sections.map<SectionRunState>((row, i) => {
+        const prev =
+          i < action.resumeFromIdx ? state.progress.sections[i] : undefined;
+        if (prev && prev.status === "success") {
+          return { ...prev, attempt: 0, errorCode: undefined, errorMessage: undefined };
+        }
+        return row;
+      });
+      const completedCount = sections.filter((s) => s.status === "success").length;
+      return {
+        ...state,
+        progress: {
+          kind: "running",
+          startedAt: action.startedAt,
+          sections,
+          completedCount,
+        },
+      };
+    }
+    case "SECTION_STARTED": {
+      const sections = state.progress.sections.map<SectionRunState>((row) =>
+        row.id === action.sectionId
+          ? {
+              ...row,
+              status: "running",
+              attempt: action.attempt,
+              errorCode: undefined,
+              errorMessage: undefined,
+            }
+          : row,
+      );
+      return { ...state, progress: { ...state.progress, sections } };
+    }
+    case "SECTION_SUCCESS": {
+      const sections = state.progress.sections.map<SectionRunState>((row) =>
+        row.id === action.sectionId
+          ? { ...row, status: "success" }
+          : row,
+      );
+      const completedCount = sections.filter((s) => s.status === "success").length;
+      return {
+        ...state,
+        completedSections: {
+          ...state.completedSections,
+          [action.sectionId]: action.section,
+        },
+        progress: {
+          ...state.progress,
+          sections,
+          completedCount,
+        },
+      };
+    }
+    case "SECTION_FAILED": {
+      const sections = state.progress.sections.map<SectionRunState>((row) =>
+        row.id === action.sectionId
+          ? {
+              ...row,
+              status: "failed",
+              errorCode: action.code,
+              errorMessage: action.message,
+            }
+          : row,
+      );
+      return {
+        ...state,
+        progress: {
+          ...state.progress,
+          kind: "failed",
+          sections,
+          failedSectionId: action.sectionId,
+        },
+      };
+    }
+    case "RESET_PROGRESS":
+      return {
+        ...state,
+        progress: buildInitialProgress(),
+        completedSections: {},
+        generatedMemo: null,
+        llm: { kind: "idle" },
+      };
     case "SET_LLM_PROVIDER_STATUS":
       return { ...state, llmProviderStatus: action.status };
     case "SET_DEMO_MEMO":
@@ -147,6 +266,7 @@ function reducer(state: State, action: Action): State {
     case "RESET":
       return {
         ...initialState,
+        progress: buildInitialProgress(),
         llmProviderStatus: state.llmProviderStatus,
         demoFollowUpMemo: state.demoFollowUpMemo,
         gateTokenSet: state.gateTokenSet,
@@ -167,8 +287,8 @@ interface MemoProjectContextValue {
   setPeriodOverride: (override: PeriodOverride) => void;
   runResearch: () => Promise<void>;
   generateMemo: (withResearch: boolean) => Promise<void>;
-  retryGenerationCompact: () => Promise<void>;
-  useFallbackMemo: () => void;
+  retryFailedSection: () => Promise<void>;
+  retryFullMemo: () => Promise<void>;
   refreshLlmProviderStatus: () => Promise<void>;
   syncGateTokenSet: () => void;
   startOver: () => void;
@@ -352,8 +472,11 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     state.periodOverride,
   ]);
 
-  const runGenerate = useCallback(
-    async (withResearch: boolean, compact: boolean): Promise<void> => {
+  const runOrchestratedGeneration = useCallback(
+    async (
+      withResearch: boolean,
+      mode: "fresh" | "resume",
+    ): Promise<void> => {
       if (!state.dna || !state.extraction || !state.initialFile) return;
       const companyName =
         state.periodOverride.detectedCompany ??
@@ -362,21 +485,34 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       const periodLabel =
         state.periodOverride.periodLabel ??
         (state.detection?.best ? renderPeriodLabel(state.detection.best) : "");
+      const research = withResearch ? state.research : null;
 
-      const req: GenerateFollowUpMemoRequest = {
+      const failedId =
+        mode === "resume" ? state.progress.failedSectionId : undefined;
+      const resumeFromIdx =
+        mode === "resume" && failedId
+          ? Math.max(0, CANONICAL_SECTION_IDS.indexOf(failedId))
+          : 0;
+      const existingSections =
+        mode === "resume" ? state.completedSections : {};
+
+      generateAbort.current?.abort();
+      const controller = new AbortController();
+      generateAbort.current = controller;
+      dispatch({
+        type: "START_GENERATION",
+        startedAt: new Date().toISOString(),
+        resumeFromIdx,
+      });
+      dispatch({ type: "SET_LLM_STATE", state: { kind: "loading" } });
+
+      const result = await runSectionGeneration({
         project: {
           id: state.dna.projectId,
           ticker: companyName,
           companyName,
         },
-        initialMemo: {
-          id: state.initialFile.id,
-          text: state.extraction.text,
-          sourceFilename: state.extraction.source.filename,
-          sizeBytes: state.extraction.source.sizeBytes,
-        },
         dna: state.dna,
-        research: withResearch ? state.research : null,
         detection: periodLabel
           ? {
               detectedCompany: companyName,
@@ -388,48 +524,63 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
               assumptionNotes: state.detection?.assumptionNotes ?? [],
             }
           : undefined,
-        generationOptions: compact ? { compact: true } : undefined,
-      };
+        research,
+        initialMemoId: state.initialFile.id,
+        apiCall: (req, signal) => api.generateMemoSection(req, signal),
+        signal: controller.signal,
+        onSectionStart: (sectionId, attempt) => {
+          dispatch({ type: "SECTION_STARTED", sectionId, attempt });
+        },
+        onSectionDone: (sectionId, section) => {
+          dispatch({ type: "SECTION_SUCCESS", sectionId, section });
+        },
+        onSectionFail: () => {
+          // SECTION_FAILED dispatch happens after the result resolves so we
+          // can also set the LLM error state in lockstep.
+        },
+        startFromSectionId: failedId,
+        existingSections,
+      });
 
-      generateAbort.current?.abort();
-      const controller = new AbortController();
-      generateAbort.current = controller;
-      dispatch({ type: "SET_LLM_STATE", state: { kind: "loading" } });
-
-      let response: GenerateFollowUpMemoResponse | null = null;
-      let networkMessage = "";
-      try {
-        response = await api.generateFollowUpMemo(req, controller.signal);
-      } catch (err) {
-        networkMessage = err instanceof Error ? err.message : "Network error";
-      }
       if (generateAbort.current !== controller) return;
       generateAbort.current = null;
 
-      if (response && response.ok) {
-        dispatch({
-          type: "SET_GENERATED_MEMO",
-          memo: response.memo,
-        });
+      if (result.ok) {
+        dispatch({ type: "SET_GENERATED_MEMO", memo: result.memo });
         dispatch({
           type: "SET_LLM_STATE",
           state: {
             kind: "success",
-            memo: response.memo,
-            providerMetadata: response.providerMetadata,
+            memo: result.memo,
+            providerMetadata: {
+              providerName: "openai",
+              modelUsed: "gpt-section",
+            },
             usedFallback: false,
-            warnings: response.warnings,
+            warnings: [],
           },
         });
         return;
       }
 
-      const warning: LlmGenerationWarning = response
-        ? { code: response.code, message: response.message }
-        : { code: "provider_error", message: networkMessage || "Network error" };
+      if (result.code === "aborted") {
+        return;
+      }
+
+      if (result.failedSectionId) {
+        dispatch({
+          type: "SECTION_FAILED",
+          sectionId: result.failedSectionId,
+          code: result.code,
+          message: result.message,
+        });
+      }
       dispatch({
         type: "SET_LLM_STATE",
-        state: { kind: "error", error: `${warning.code} · ${warning.message}` },
+        state: {
+          kind: "error",
+          error: `${result.code} · ${result.message}`,
+        },
       });
     },
     [
@@ -439,56 +590,29 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       state.research,
       state.detection,
       state.periodOverride,
+      state.progress.failedSectionId,
+      state.completedSections,
     ],
   );
 
   const generateMemo = useCallback(
-    (withResearch: boolean): Promise<void> => runGenerate(withResearch, false),
-    [runGenerate],
+    (withResearch: boolean): Promise<void> => {
+      dispatch({ type: "RESET_PROGRESS" });
+      return runOrchestratedGeneration(withResearch, "fresh");
+    },
+    [runOrchestratedGeneration],
   );
 
-  const retryGenerationCompact = useCallback(
-    (): Promise<void> => runGenerate(Boolean(state.research), true),
-    [runGenerate, state.research],
+  const retryFailedSection = useCallback(
+    (): Promise<void> =>
+      runOrchestratedGeneration(Boolean(state.research), "resume"),
+    [runOrchestratedGeneration, state.research],
   );
 
-  const useFallbackMemo = useCallback((): void => {
-    if (!state.dna || !state.research) return;
-    const companyName =
-      state.periodOverride.detectedCompany ??
-      state.detection?.detectedCompany ??
-      state.initialFile?.filename.replace(/\.[^.]+$/, "") ??
-      "Company";
-    const memo = buildFallbackMemo({
-      project: {
-        id: state.dna.projectId,
-        companyName,
-      },
-      dna: state.dna,
-      research: state.research,
-      generatedAt: new Date().toISOString(),
-    });
-    dispatch({ type: "SET_GENERATED_MEMO", memo });
-    dispatch({
-      type: "SET_LLM_STATE",
-      state: {
-        kind: "success",
-        memo,
-        providerMetadata: {
-          providerName: "none",
-          modelUsed: "fallback-from-research",
-        },
-        usedFallback: true,
-        warnings: [],
-      },
-    });
-  }, [
-    state.dna,
-    state.research,
-    state.detection,
-    state.initialFile,
-    state.periodOverride,
-  ]);
+  const retryFullMemo = useCallback((): Promise<void> => {
+    dispatch({ type: "RESET_PROGRESS" });
+    return runOrchestratedGeneration(Boolean(state.research), "fresh");
+  }, [runOrchestratedGeneration, state.research]);
 
   const startOver = useCallback(() => {
     researchAbort.current?.abort();
@@ -523,8 +647,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       setPeriodOverride,
       runResearch,
       generateMemo,
-      retryGenerationCompact,
-      useFallbackMemo,
+      retryFailedSection,
+      retryFullMemo,
       refreshLlmProviderStatus,
       syncGateTokenSet,
       startOver,
@@ -535,8 +659,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     setPeriodOverride,
     runResearch,
     generateMemo,
-    retryGenerationCompact,
-    useFallbackMemo,
+    retryFailedSection,
+    retryFullMemo,
     refreshLlmProviderStatus,
     syncGateTokenSet,
     startOver,

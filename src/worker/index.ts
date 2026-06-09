@@ -23,8 +23,11 @@ import { demoProject } from "@shared/demo/rategain-project";
 import { demoMemoDna } from "@shared/demo/rategain-memo-dna";
 import { demoFollowUpMemo } from "@shared/demo/rategain-follow-up-memo";
 import type {
+  CanonicalSectionId,
   GenerateFollowUpMemoRequest,
   GenerateFollowUpMemoResponse,
+  GenerateMemoSectionRequest,
+  GenerateMemoSectionResponse,
   HealthResponse,
   LlmGenerationErrorCode,
   LlmProviderName,
@@ -37,9 +40,22 @@ import {
   getProvider,
 } from "./llm/provider";
 import { buildPrompt } from "./llm/prompt";
-import { FOLLOW_UP_MEMO_TOOL_SCHEMA, parseLlmJson } from "./llm/parse";
+import {
+  FOLLOW_UP_MEMO_TOOL_SCHEMA,
+  parseLlmJson,
+  parseSectionJson,
+} from "./llm/parse";
 import { trimRequestBody, trimRequestBodyCompact } from "./llm/trim";
 import { handleResearchUpdates } from "./research/route";
+import {
+  CANONICAL_SECTION_IDS,
+  buildSectionPrompt,
+} from "./llm/sectionPrompt";
+import {
+  MEMO_SECTION_OPENAI_SCHEMA,
+  normalizeSectionNulls,
+} from "./llm/sectionSchema";
+import { callOpenAIResponses } from "./llm/openai";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -49,6 +65,11 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_OUTPUT_TOKENS = 5_000;
 const COMPACT_MAX_OUTPUT_TOKENS = 3_500;
 const HARD_MAX_OUTPUT_TOKENS = 12_000;
+// Phase 5D: per-section endpoint output budgets. Tiny relative to the old
+// one-shot memo path because each call emits exactly ONE MemoSection.
+const SECTION_MAX_OUTPUT_TOKENS = 1_000;
+const SECTION_COMPACT_MAX_OUTPUT_TOKENS = 600;
+const SECTION_FORMAT_NAME = "memo_section";
 // Phase 5C: pre-call auto-compact guard. If the default-trim assembled
 // prompt exceeds this size (rough heuristic ~45k input tokens for
 // gpt-5.2), the worker rebuilds the request with trimRequestBodyCompact
@@ -295,6 +316,205 @@ app.post("/api/generate/follow-up-memo", async (c) => {
   }
 });
 
+// Phase 5D: per-section memo generation. The workspace orchestrates 9
+// sequential calls to this endpoint instead of one big follow-up-memo call.
+// Each call emits ONE MemoSection — small input, small output, well under
+// the 60 s timeout. Per-section retry-compact is driven by the frontend
+// orchestrator (the worker just honors the `retryCompact` flag in the body).
+app.post("/api/generate/memo-section", async (c) => {
+  const declaredLength = Number(c.req.header("content-length") ?? "0");
+  if (declaredLength > MAX_BODY_BYTES) {
+    return c.json({ error: "payload_too_large" }, 413);
+  }
+  let bodyText: string;
+  try {
+    bodyText = await c.req.raw.text();
+  } catch {
+    return c.json({ error: "body_unreadable" }, 400);
+  }
+  if (bodyText.length > MAX_BODY_BYTES) {
+    return c.json({ error: "payload_too_large" }, 413);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+  const validation = validateGenerateSectionRequest(parsed);
+  if (!validation.ok) {
+    return c.json(
+      { error: "invalid_request", message: validation.message },
+      400,
+    );
+  }
+  const sectionId = validation.value.sectionId;
+
+  const readiness = evaluateLlmReadiness(c.env);
+  if (!readiness.llmEnabled) {
+    return c.json(
+      buildSafeSectionFailure(
+        "not_configured",
+        "LLM generation is not enabled on this server.",
+        sectionId,
+      ),
+    );
+  }
+  if (!readiness.providerConfigured) {
+    return c.json(
+      buildSafeSectionFailure(
+        "provider_missing",
+        "LLM provider is not configured.",
+        sectionId,
+        readiness.provider,
+        readiness.model,
+      ),
+    );
+  }
+  if (!readiness.apiKeyConfigured) {
+    return c.json(
+      buildSafeSectionFailure(
+        "api_key_missing",
+        "LLM API key is not configured.",
+        sectionId,
+        readiness.provider,
+        readiness.model,
+      ),
+    );
+  }
+  if (readiness.provider !== "openai") {
+    return c.json(
+      buildSafeSectionFailure(
+        "provider_missing",
+        "Section-by-section generation requires the OpenAI provider.",
+        sectionId,
+        readiness.provider,
+        readiness.model,
+      ),
+    );
+  }
+  if (readiness.gateEnabled) {
+    const gateResult = checkGateToken(c.env, c.req.header(GATE_HEADER));
+    if (!gateResult.ok) {
+      return c.json(
+        buildSafeSectionFailure(
+          gateResult.code,
+          gateResult.message,
+          sectionId,
+          readiness.provider,
+          readiness.model,
+        ),
+      );
+    }
+  }
+  const apiKey = readEnvVar(c.env, "LLM_API_KEY") || readEnvVar(c.env, "OPENAI_API_KEY");
+  if (!apiKey || !readiness.model) {
+    return c.json(
+      buildSafeSectionFailure(
+        "not_configured",
+        "LLM provider is not available.",
+        sectionId,
+        readiness.provider,
+        readiness.model,
+      ),
+    );
+  }
+
+  try {
+    const prompt = buildSectionPrompt(validation.value);
+    const maxTokens = validation.value.retryCompact
+      ? SECTION_COMPACT_MAX_OUTPUT_TOKENS
+      : SECTION_MAX_OUTPUT_TOKENS;
+
+    console.log(
+      JSON.stringify({
+        event: "llm_generate_section_enter",
+        sectionId,
+        retryCompact: validation.value.retryCompact === true,
+        systemLen: prompt.system.length,
+        userLen: prompt.user.length,
+        findings: validation.value.relevantFindings.length,
+        maxTokens,
+        model: readiness.model,
+      }),
+    );
+
+    const result = await callOpenAIResponses({
+      apiKey,
+      model: readiness.model,
+      system: prompt.system,
+      user: prompt.user,
+      schema: MEMO_SECTION_OPENAI_SCHEMA,
+      schemaName: SECTION_FORMAT_NAME,
+      maxTokens,
+      abortSignal: c.req.raw.signal,
+      logEventTag: "llm_generate_section",
+    });
+
+    if (!result.ok) {
+      return c.json(
+        buildSafeSectionFailure(
+          translateProviderCode(result.code),
+          result.message,
+          sectionId,
+          "openai",
+          readiness.model,
+        ),
+      );
+    }
+
+    const normalized = normalizeSectionNulls(result.parsed);
+    const parsedSection = parseSectionJson(
+      normalized,
+      sectionId,
+      prompt.allowedDocumentIds,
+    );
+    if (!parsedSection.ok) {
+      return c.json(
+        buildSafeSectionFailure(
+          "parse_error",
+          parsedSection.message,
+          sectionId,
+          "openai",
+          readiness.model,
+        ),
+      );
+    }
+
+    const body: GenerateMemoSectionResponse = {
+      ok: true,
+      section: parsedSection.section,
+      providerMetadata: {
+        providerName: "openai",
+        modelUsed: readiness.model,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+      },
+      warnings: parsedSection.warnings,
+    };
+    return c.json(body);
+  } catch {
+    console.log(
+      JSON.stringify({
+        event: "generate_section_unexpected_fail",
+        sectionId,
+        provider: readiness.provider,
+        model: readiness.model,
+        errorType: "internal",
+      }),
+    );
+    return c.json(
+      buildSafeSectionFailure(
+        "provider_error",
+        "Internal generation error.",
+        sectionId,
+        readiness.provider,
+        readiness.model,
+      ),
+    );
+  }
+});
+
 app.notFound((c) => {
   if (c.req.path.startsWith("/api/")) {
     return c.json({ error: "not_found", path: c.req.path }, 404);
@@ -316,6 +536,28 @@ function buildSafeFailure(
     modelUsed,
     fallbackAvailable: true,
   };
+}
+
+function buildSafeSectionFailure(
+  code: LlmGenerationErrorCode,
+  message: string,
+  sectionId: CanonicalSectionId,
+  providerName?: LlmProviderName,
+  modelUsed?: string,
+): GenerateMemoSectionResponse {
+  return {
+    ok: false,
+    code,
+    message,
+    providerName,
+    modelUsed,
+    sectionId,
+  };
+}
+
+function readEnvVar(env: Env, key: string): string | undefined {
+  const value = (env as unknown as Record<string, unknown>)[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 type ProviderFailCode =
@@ -423,6 +665,51 @@ function invalid(message: string): { ok: false; message: string } {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type SectionValidationResult =
+  | { ok: true; value: GenerateMemoSectionRequest }
+  | { ok: false; message: string };
+
+function validateGenerateSectionRequest(input: unknown): SectionValidationResult {
+  if (!isPlainObject(input)) return invalid("request must be an object");
+  const sectionId = input.sectionId;
+  if (typeof sectionId !== "string") return invalid("sectionId missing");
+  if (!(CANONICAL_SECTION_IDS as readonly string[]).includes(sectionId)) {
+    return invalid(`sectionId is not a canonical section id: ${sectionId}`);
+  }
+  const project = input.project;
+  if (!isPlainObject(project)) return invalid("project missing");
+  if (typeof project.id !== "string") return invalid("project.id missing");
+  if (typeof project.ticker !== "string")
+    return invalid("project.ticker missing");
+  if (typeof project.companyName !== "string")
+    return invalid("project.companyName missing");
+  if (!isPlainObject(input.dna)) return invalid("dna missing");
+  if (input.detection !== undefined && !isPlainObject(input.detection)) {
+    return invalid("detection must be an object when provided");
+  }
+  if (!Array.isArray(input.relevantFindings)) {
+    return invalid("relevantFindings must be an array");
+  }
+  if (
+    input.relevantCheckpointImpacts !== undefined &&
+    !Array.isArray(input.relevantCheckpointImpacts)
+  ) {
+    return invalid(
+      "relevantCheckpointImpacts must be an array when provided",
+    );
+  }
+  if (
+    input.priorSectionsDigest !== undefined &&
+    !Array.isArray(input.priorSectionsDigest)
+  ) {
+    return invalid("priorSectionsDigest must be an array when provided");
+  }
+  return {
+    ok: true,
+    value: input as unknown as GenerateMemoSectionRequest,
+  };
 }
 
 export default app;

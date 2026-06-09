@@ -2,6 +2,8 @@ import type {
   FollowUpMemo,
   GenerateFollowUpMemoRequest,
   GenerateFollowUpMemoResponse,
+  GenerateMemoSectionRequest,
+  GenerateMemoSectionResponse,
   HealthResponse,
   LlmStatusResponse,
   MemoDNA,
@@ -65,6 +67,18 @@ export const api = {
   ) =>
     postJson<GenerateFollowUpMemoResponse, GenerateFollowUpMemoRequest>(
       "/api/generate/follow-up-memo",
+      req,
+      {
+        signal,
+        headers: gateHeader(),
+      },
+    ),
+  generateMemoSection: (
+    req: GenerateMemoSectionRequest,
+    signal?: AbortSignal,
+  ) =>
+    postJson<GenerateMemoSectionResponse, GenerateMemoSectionRequest>(
+      "/api/generate/memo-section",
       req,
       {
         signal,
