@@ -3,6 +3,7 @@ import type {
   ResearchFindings,
   ResearchSource,
 } from "@shared/types";
+import { normalizeUrl, type HarvestedWebSources } from "../llm/openai";
 
 // Strip nulls on nullable fields so the JSON returned to the route
 // mirrors the "absent = undefined" shape used by the rest of the app.
@@ -37,26 +38,34 @@ function normalizeSource(input: unknown): unknown {
 
 export interface SourceGroundingResult {
   findings: ResearchFindings;
-  // True iff no findings survived with any verified source AND no web_search
-  // sources were observed — the route turns this into research_no_sources.
+  // True iff the harvested-citation pool is empty OR the model returned no
+  // findings. The route turns this into research_no_sources.
+  // NOTE: this is NOT keyed on per-finding verification — that would falsely
+  // trip whenever the model emitted citations but never copied any URL into
+  // a specific finding.
   allEmpty: boolean;
 }
 
-// Walk every finding; mark sources that appear in the harvested
-// web_search source map as verifiedByWebSearch and enrich title/date from
-// the tool metadata when the model omitted them. Then downgrade findings
-// whose impact is non-neutral but lack any verified source.
+// Walk every finding; verify each model-emitted source ONLY by direct
+// URL match against the harvested citations (annotations ∪ included
+// action.sources). Verified sources are enriched from citation metadata
+// when the model omitted title/date. Non-neutral findings with no
+// directly-verified source are downgraded to neutral with an "Insufficient
+// source coverage." prefix and a warning. Sourceless findings keep
+// sources:[] (we deliberately do NOT attach the harvested citation pool
+// to individual findings — the model never linked those URLs to that
+// finding, and ResearchSource has no field to mark a citation as
+// general/context).
 export function enforceSourceGrounding(
   raw: ResearchFindings,
-  webSearchSources: Map<string, { title?: string; date?: string }>,
+  harvested: HarvestedWebSources,
 ): SourceGroundingResult {
   const warnings: string[] = [...raw.warnings];
-  let anyVerifiedAnywhere = false;
 
   const findings: ResearchFinding[] = raw.findings.map((f) => {
     const sources: ResearchSource[] = f.sources.map((s) => {
-      const meta = webSearchSources.get(s.url);
-      if (meta) anyVerifiedAnywhere = true;
+      const key = normalizeUrl(s.url);
+      const meta = key ? harvested.byUrl.get(key) : undefined;
       return {
         ...s,
         title: s.title || meta?.title || "",
@@ -122,10 +131,12 @@ export function enforceSourceGrounding(
     warnings,
   };
 
-  const allEmpty =
-    findings.length === 0 ||
-    (!anyVerifiedAnywhere &&
-      findings.every((f) => f.sources.every((s) => !s.verifiedByWebSearch)));
+  // Trigger research_no_sources only when there are genuinely zero
+  // citations to report (or zero findings). Per-finding verification is
+  // handled above (downgrade + warning); it does not gate the whole
+  // response, otherwise valid web_search citations that the model failed
+  // to copy into a specific finding would surface as a hard failure.
+  const allEmpty = findings.length === 0 || harvested.byUrl.size === 0;
 
   return { findings: cleaned, allEmpty };
 }

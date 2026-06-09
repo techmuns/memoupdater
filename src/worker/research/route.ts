@@ -12,10 +12,7 @@ import {
   evaluateLlmReadiness,
   getProviderName,
 } from "../llm/provider";
-import {
-  callOpenAIResponses,
-  extractWebSearchSources,
-} from "../llm/openai";
+import { callOpenAIResponses, harvestWebSources } from "../llm/openai";
 import { trimResearchRequestBody } from "../llm/trim";
 import { buildResearchPrompt } from "./prompt";
 import {
@@ -30,6 +27,16 @@ const HARD_MAX_OUTPUT_TOKENS = 12_000;
 const GATE_HEADER = "x-memo-llm-gate";
 
 const WEB_SEARCH_TOOL = { type: "web_search" } as const;
+// Forces the model to actually invoke web_search instead of choosing not
+// to (the Responses API defaults to tool_choice: "auto"). If a future
+// OpenAI release rejects this exact shape, the documented operator
+// fallback is `tool_choice: "required"` (with web_search as the only
+// hosted tool, "required" still forces it).
+const WEB_SEARCH_TOOL_CHOICE = { type: "web_search" } as const;
+// Asks OpenAI to include the broader web_search_call.action.sources list
+// in addition to the inline url_citation annotations. Both channels are
+// harvested by harvestWebSources(); see src/worker/llm/openai.ts.
+const RESEARCH_INCLUDE = ["web_search_call.action.sources"] as const;
 
 export async function handleResearchUpdates(
   c: Context<{ Bindings: Env }>,
@@ -156,6 +163,8 @@ export async function handleResearchUpdates(
       schema: RESEARCH_FINDINGS_OPENAI_SCHEMA,
       schemaName: RESEARCH_FORMAT_NAME,
       tools: [WEB_SEARCH_TOOL as unknown as Record<string, unknown>],
+      toolChoice: WEB_SEARCH_TOOL_CHOICE,
+      include: [...RESEARCH_INCLUDE],
       maxTokens,
       abortSignal: c.req.raw.signal,
       logEventTag: "llm_research",
@@ -186,17 +195,31 @@ export async function handleResearchUpdates(
       );
     }
 
-    const webSearchMap = extractWebSearchSources(call.payload);
-    const webSearchMissing = webSearchMap.size === 0;
-    const enforcement = enforceSourceGrounding(shape.value, webSearchMap);
+    const harvested = harvestWebSources(call.payload);
+    const enforcement = enforceSourceGrounding(shape.value, harvested);
     const warnings: LlmGenerationWarning[] = [];
-    if (webSearchMissing) {
+    if (
+      harvested.urlCitationCount === 0 &&
+      harvested.webSearchSourceCount === 0
+    ) {
       warnings.push({
         code: "schema_warning",
         message:
-          "web_search source metadata not available in response; falling back to model-emitted source validation.",
+          "No web_search citations found in the response; relying on model-emitted sources only.",
       });
     }
+
+    // Counts-only debug log. No URLs, no text, no quotes, no secrets,
+    // no response body.
+    console.log(
+      JSON.stringify({
+        event: "llm_research_sources",
+        webSearchCallCount: harvested.webSearchCallCount,
+        urlCitationCount: harvested.urlCitationCount,
+        webSearchSourceCount: harvested.webSearchSourceCount,
+        findings: shape.value.findings.length,
+      }),
+    );
 
     if (enforcement.allEmpty) {
       return c.json(

@@ -124,6 +124,9 @@ function buildResearchUserPrompt(req: ResearchUpdatesRequest): string {
     "- Use web_search to find primary sources. Quote URLs verbatim — do not paraphrase them.",
   );
   lines.push(
+    "- For every finding, copy the exact URL(s) you cited via web_search into that finding's `sources[]` (title + url). Do not invent URLs.",
+  );
+  lines.push(
     "- Every finding with impact ≠ neutral must carry at least one source with a working url.",
   );
   lines.push(

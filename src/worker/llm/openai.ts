@@ -11,9 +11,18 @@ const OPENAI_URL = "https://api.openai.com/v1/responses";
 const MEMO_FORMAT_NAME = "follow_up_memo";
 const TIMEOUT_MS = 60_000;
 
+interface OpenAIAnnotation {
+  type: string;
+  url?: string;
+  title?: string;
+  start_index?: number;
+  end_index?: number;
+}
+
 interface OpenAIContentBlock {
   type: string;
   text?: string;
+  annotations?: OpenAIAnnotation[];
 }
 
 interface WebSearchSourceBlock {
@@ -45,6 +54,8 @@ export interface CallOpenAIResponsesArgs {
   schema: object;
   schemaName: string;
   tools?: Array<Record<string, unknown>>;
+  toolChoice?: unknown;
+  include?: string[];
   maxTokens?: number;
   abortSignal?: AbortSignal;
   logEventTag?: string;
@@ -66,9 +77,12 @@ export type CallOpenAIResponsesResult =
 
 // Shared low-level call to the OpenAI Responses API. Used by the memo
 // provider (createOpenAIProvider below) and by the research route, which
-// passes a different schema + a web_search tool and walks `payload.output`
-// for web_search_call source metadata. Never logs prompts, output text,
-// the API key, or any user secrets.
+// additionally passes:
+//   - tools: [{type:"web_search"}] (+ optional tool_choice to force search)
+//   - include: ["web_search_call.action.sources"] so the broader source
+//     list is returned alongside the inline url_citation annotations.
+// harvestWebSources() reads both channels. Never logs prompts, output text,
+// source URLs/quotes, the API key, or any user secrets.
 export async function callOpenAIResponses(
   args: CallOpenAIResponsesArgs,
 ): Promise<CallOpenAIResponsesResult> {
@@ -98,6 +112,12 @@ export async function callOpenAIResponses(
     }
     if (args.tools && args.tools.length > 0) {
       body.tools = args.tools;
+    }
+    if (args.toolChoice !== undefined) {
+      body.tool_choice = args.toolChoice;
+    }
+    if (args.include && args.include.length > 0) {
+      body.include = args.include;
     }
 
     let res: Response;
@@ -272,28 +292,90 @@ export function createOpenAIProvider(
   };
 }
 
-// Harvest web_search_call action.sources from the raw Responses-API
-// payload. Returns a map keyed by URL so the research route can mark
-// model-emitted finding sources as verified-by-tool and enrich
-// title/date when the model omitted them. Empty when the response
-// shape doesn't include web_search blocks.
-export function extractWebSearchSources(
+// Harvest web-search citations from a Responses-API payload. Reads BOTH:
+//   (a) primary channel — output[].content[].annotations[] entries with
+//       type === "url_citation"; always present when the model cites.
+//   (b) secondary channel — output[].action.sources on "web_search_call"
+//       blocks; only present when the request body includes
+//       include: ["web_search_call.action.sources"].
+// Returns a normalized-URL map (so the research route's validator can
+// verify model-emitted finding sources by direct URL match) plus integer
+// counts the route uses for a safe debug log.
+export interface HarvestedWebSources {
+  byUrl: Map<string, { title?: string; date?: string }>;
+  webSearchCallCount: number;
+  urlCitationCount: number;
+  webSearchSourceCount: number;
+}
+
+export function harvestWebSources(
   payload: OpenAIResponsePayload,
-): Map<string, { title?: string; date?: string }> {
-  const map = new Map<string, { title?: string; date?: string }>();
+): HarvestedWebSources {
+  const byUrl = new Map<string, { title?: string; date?: string }>();
+  let webSearchCallCount = 0;
+  let urlCitationCount = 0;
+  let webSearchSourceCount = 0;
+
+  const merge = (
+    rawUrl: string,
+    meta: { title?: string; date?: string },
+  ): void => {
+    const key = normalizeUrl(rawUrl);
+    if (!key) return;
+    const existing = byUrl.get(key);
+    byUrl.set(key, {
+      title: existing?.title ?? meta.title,
+      date: existing?.date ?? meta.date,
+    });
+  };
+
   for (const block of payload.output ?? []) {
-    if (block.type !== "web_search_call") continue;
-    const sources = block.action?.sources ?? [];
-    for (const src of sources) {
-      if (typeof src.url !== "string" || src.url.length === 0) continue;
-      const existing = map.get(src.url);
-      map.set(src.url, {
-        title: existing?.title ?? src.title,
-        date: existing?.date ?? src.date,
-      });
+    if (block.type === "web_search_call") {
+      webSearchCallCount += 1;
+      for (const src of block.action?.sources ?? []) {
+        if (typeof src.url !== "string" || src.url.length === 0) continue;
+        webSearchSourceCount += 1;
+        merge(src.url, { title: src.title, date: src.date });
+      }
+      continue;
+    }
+    for (const c of block.content ?? []) {
+      for (const a of c.annotations ?? []) {
+        if (a.type !== "url_citation") continue;
+        if (typeof a.url !== "string" || a.url.length === 0) continue;
+        urlCitationCount += 1;
+        merge(a.url, { title: a.title });
+      }
     }
   }
-  return map;
+
+  return { byUrl, webSearchCallCount, urlCitationCount, webSearchSourceCount };
+}
+
+// Normalize a URL for citation-vs-finding matching. Lowercase host, drop
+// hash, strip common tracking params, and remove a single trailing slash
+// on the pathname. Returns null when the URL is unparseable.
+const TRACKING_PARAM_RE = /^(utm_|fbclid$|gclid$|ref$|ref_src$|mc_cid$|mc_eid$)/i;
+export function normalizeUrl(raw: string): string | null {
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  u.hash = "";
+  u.hostname = u.hostname.toLowerCase();
+  const params = u.searchParams;
+  const toDelete: string[] = [];
+  params.forEach((_, key) => {
+    if (TRACKING_PARAM_RE.test(key)) toDelete.push(key);
+  });
+  for (const k of toDelete) params.delete(k);
+  if (u.pathname.length > 1 && u.pathname.endsWith("/")) {
+    u.pathname = u.pathname.slice(0, -1);
+  }
+  return u.toString();
 }
 
 function hasRefusal(output: OpenAIOutputBlock[] | undefined): boolean {
