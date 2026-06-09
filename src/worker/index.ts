@@ -43,7 +43,6 @@ import { buildPrompt } from "./llm/prompt";
 import {
   FOLLOW_UP_MEMO_TOOL_SCHEMA,
   parseLlmJson,
-  parseSectionJson,
 } from "./llm/parse";
 import { trimRequestBody, trimRequestBodyCompact } from "./llm/trim";
 import { handleResearchUpdates } from "./research/route";
@@ -52,11 +51,13 @@ import {
   CANONICAL_SECTION_IDS,
   buildSectionPrompt,
 } from "./llm/sectionPrompt";
-import {
-  MEMO_SECTION_OPENAI_SCHEMA,
-  normalizeSectionNulls,
-} from "./llm/sectionSchema";
+import { MEMO_SECTION_OPENAI_SCHEMA } from "./llm/sectionSchema";
 import { callOpenAIResponses } from "./llm/openai";
+import {
+  runSectionExtractRepairLadder,
+  runSectionRepair,
+  type SectionCallResult,
+} from "./llm/jsonRepair";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -66,10 +67,34 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_OUTPUT_TOKENS = 5_000;
 const COMPACT_MAX_OUTPUT_TOKENS = 3_500;
 const HARD_MAX_OUTPUT_TOKENS = 12_000;
-// Phase 5D: per-section endpoint output budgets. Tiny relative to the old
-// one-shot memo path because each call emits exactly ONE MemoSection.
-const SECTION_MAX_OUTPUT_TOKENS = 1_000;
-const SECTION_COMPACT_MAX_OUTPUT_TOKENS = 600;
+// Phase 5F: per-section output budgets. Bumped vs Phase 5D's flat
+// 1_000 / 600 to give bridge-required sections (sec_q4_retest,
+// sec_eps_bridge, sec_valuation_peer_gap) headroom to emit their full
+// JSON without truncation. Lighter sections stay near the Phase 5D
+// budget. Compact is the budget used on the orchestrator's retryCompact
+// attempt.
+const SECTION_MAX_OUTPUT_TOKENS: Record<CanonicalSectionId, number> = {
+  sec_thesis_snapshot: 1_000,
+  sec_q4_retest: 1_500,
+  sec_mgmt_retest: 1_000,
+  sec_ai_macro_risk: 1_000,
+  sec_memo_held: 1_100,
+  sec_memo_broke: 1_100,
+  sec_eps_bridge: 1_500,
+  sec_valuation_peer_gap: 1_500,
+  sec_final_action: 1_200,
+};
+const SECTION_COMPACT_MAX_OUTPUT_TOKENS: Record<CanonicalSectionId, number> = {
+  sec_thesis_snapshot: 700,
+  sec_q4_retest: 1_000,
+  sec_mgmt_retest: 700,
+  sec_ai_macro_risk: 700,
+  sec_memo_held: 800,
+  sec_memo_broke: 800,
+  sec_eps_bridge: 1_000,
+  sec_valuation_peer_gap: 1_000,
+  sec_final_action: 900,
+};
 const SECTION_FORMAT_NAME = "memo_section";
 // Phase 5C: pre-call auto-compact guard. If the default-trim assembled
 // prompt exceeds this size (rough heuristic ~45k input tokens for
@@ -425,8 +450,8 @@ app.post("/api/generate/memo-section", async (c) => {
   try {
     const prompt = buildSectionPrompt(validation.value);
     const maxTokens = validation.value.retryCompact
-      ? SECTION_COMPACT_MAX_OUTPUT_TOKENS
-      : SECTION_MAX_OUTPUT_TOKENS;
+      ? SECTION_COMPACT_MAX_OUTPUT_TOKENS[sectionId]
+      : SECTION_MAX_OUTPUT_TOKENS[sectionId];
 
     console.log(
       JSON.stringify({
@@ -441,41 +466,70 @@ app.post("/api/generate/memo-section", async (c) => {
       }),
     );
 
-    const result = await callOpenAIResponses({
-      apiKey,
-      model: readiness.model,
-      system: prompt.system,
-      user: prompt.user,
-      schema: MEMO_SECTION_OPENAI_SCHEMA,
-      schemaName: SECTION_FORMAT_NAME,
-      maxTokens,
-      abortSignal: c.req.raw.signal,
-      logEventTag: "llm_generate_section",
+    const ladder = await runSectionExtractRepairLadder({
+      sectionId,
+      allowedDocumentIds: prompt.allowedDocumentIds,
+      normalCall: async (): Promise<SectionCallResult> => {
+        const r = await callOpenAIResponses({
+          apiKey,
+          model: readiness.model!,
+          system: prompt.system,
+          user: prompt.user,
+          schema: MEMO_SECTION_OPENAI_SCHEMA,
+          schemaName: SECTION_FORMAT_NAME,
+          maxTokens,
+          abortSignal: c.req.raw.signal,
+          logEventTag: "llm_generate_section",
+        });
+        if (r.ok) {
+          return {
+            ok: true,
+            parsed: r.parsed,
+            inputTokens: r.inputTokens,
+            outputTokens: r.outputTokens,
+          };
+        }
+        return {
+          ok: false,
+          code: r.code,
+          message: r.message,
+          rawText: r.rawText,
+        };
+      },
+      repairCall: async (rawText: string): Promise<SectionCallResult> => {
+        const r = await runSectionRepair({
+          apiKey,
+          model: readiness.model!,
+          sectionId,
+          rawText,
+          schema: MEMO_SECTION_OPENAI_SCHEMA,
+          schemaName: SECTION_FORMAT_NAME,
+          abortSignal: c.req.raw.signal,
+        });
+        if (r.ok) {
+          return {
+            ok: true,
+            parsed: r.parsed,
+            inputTokens: r.inputTokens,
+            outputTokens: r.outputTokens,
+          };
+        }
+        return { ok: false, code: r.code, message: r.message };
+      },
+      log: (event) => {
+        console.log(JSON.stringify({ event: "llm_generate_section_repair", ...event }));
+      },
     });
 
-    if (!result.ok) {
+    if (!ladder.ok) {
+      const translated =
+        ladder.code === "parse_error"
+          ? "parse_error"
+          : translateProviderCode(ladder.code);
       return c.json(
         buildSafeSectionFailure(
-          translateProviderCode(result.code),
-          result.message,
-          sectionId,
-          "openai",
-          readiness.model,
-        ),
-      );
-    }
-
-    const normalized = normalizeSectionNulls(result.parsed);
-    const parsedSection = parseSectionJson(
-      normalized,
-      sectionId,
-      prompt.allowedDocumentIds,
-    );
-    if (!parsedSection.ok) {
-      return c.json(
-        buildSafeSectionFailure(
-          "parse_error",
-          parsedSection.message,
+          translated,
+          ladder.message,
           sectionId,
           "openai",
           readiness.model,
@@ -485,14 +539,14 @@ app.post("/api/generate/memo-section", async (c) => {
 
     const body: GenerateMemoSectionResponse = {
       ok: true,
-      section: parsedSection.section,
+      section: ladder.section,
       providerMetadata: {
         providerName: "openai",
         modelUsed: readiness.model,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
+        inputTokens: ladder.inputTokens,
+        outputTokens: ladder.outputTokens,
       },
-      warnings: parsedSection.warnings,
+      warnings: ladder.warnings,
     };
     return c.json(body);
   } catch {

@@ -73,6 +73,11 @@ export type CallOpenAIResponsesResult =
       ok: false;
       code: LlmGenerateFailCode;
       message: string;
+      // Phase 5F: populated only when the parse-of-output-text step
+      // failed (malformed_output from JSON.parse). Lets callers run the
+      // extract+repair ladder against the raw output. Never includes
+      // memo content, source text, or secrets in caller logs.
+      rawText?: string;
     };
 
 // Shared low-level call to the OpenAI Responses API. Used by the memo
@@ -226,6 +231,7 @@ export async function callOpenAIResponses(
         ok: false,
         code: "malformed_output",
         message: "Provider output_text was not valid JSON",
+        rawText: text,
       };
     }
 
