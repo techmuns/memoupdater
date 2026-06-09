@@ -21,28 +21,38 @@ export function buildResearchPrompt(
     "- If you found no usable sources at all, return findings: [] and add a warning to the warnings[] array.",
     "- Do not bring in opinions or commentary that lack a sourced finding.",
     "- No fake precision. No generic AI commentary. No 'we expect' / 'we believe' language unless it is attributable to a named cited source.",
-    "- Bias to recent, primary sources: company filings (exchange notices, annual reports), earnings call transcripts, official investor presentations, regulator notices, and reputable financial press. Avoid blog rehashes when a primary source exists.",
     "- Emit a single JSON object matching the provided schema. No prose outside the JSON.",
     "",
-    "Focus areas (in priority order):",
-    "  1. Latest financial results (revenue, ARR, margin, FCF, recurring quality).",
-    "  2. Earnings-call / management commentary.",
-    "  3. Exchange filings and company announcements.",
-    "  4. Investor presentations.",
-    "  5. Guidance changes.",
-    "  6. Broker / consensus changes (only if surfaced by a sourced finding).",
-    "  7. Valuation movement (price, multiples, peer comp).",
-    "  8. Peer developments material to the thesis.",
-    "  9. Macro / industry risks relevant to the company.",
-    " 10. AI / technology disruption risk.",
-    " 11. Anything else that directly affects the original thesis checkpoints listed in the user prompt.",
+    "Source priority (HARD ranking — search and prefer in this order):",
+    "  1. Official company exchange filings (annual reports, audited results, 10-K/10-Q/20-F, earnings releases).        →  tier: official",
+    "  2. Official company investor presentations.                                                                       →  tier: company",
+    "  3. Official earnings release / audited financial results on the company site.                                     →  tier: official",
+    "  4. Official earnings call transcript or audio/transcript source.                                                  →  tier: transcript",
+    "  5. Company website / investor relations pages and company press releases.                                         →  tier: company",
+    "  6. Exchange announcements (BSE/NSE/SEC/regulator).                                                                →  tier: exchange",
+    "  7. Credible business press (Reuters, Bloomberg, FT, WSJ, CNBC, Economic Times, Mint, Business Standard, etc.).    →  tier: press",
+    "  8. Valuation / market-data providers (Yahoo Finance, Screener.in, Tickertape, TradingView, etc.).                 →  tier: market_data",
+    "  9. Broker / media aggregators / blogs ONLY when nothing above is available.                                       →  tier: other",
+    "",
+    "- For each source you cite, set its `tier` to the value listed above. The server will run a URL/title sanity check and only ever DOWNGRADE — never upgrade — your label, so be honest about tier.",
+    "- For each finding, the HIGHEST-tier (lowest-numbered) source must come first in `sources[]`.",
+    "- If you can only find a `press` / `market_data` / `other` source for a thesis-relevant fact, set the finding's `impact` to `watch` (or `neutral`) until a primary source is available. The server will downgrade non-neutral findings that lack a primary-tier verified source to `watch`.",
+    "- Strongly prefer official / company / exchange / transcript sources for financial numbers and management commentary; do NOT treat press or aggregator sources as equal to filings.",
+    "",
+    "Coverage target (when sources allow, NOT a quota to fabricate against):",
+    "- Aim for 6–10 findings total.",
+    "- ≥2 financial / latest-result findings (revenue, EBITDA, margin, PAT, EPS, segments).",
+    "- ≥1 management commentary finding (earnings call / press release).",
+    "- ≥1 valuation / market-movement finding (multiples, peer gap, price action).",
+    "- ≥1 risk / watch item.",
+    "- If a category genuinely lacks usable sources, OMIT it and emit ONE explicit coverage-gap finding (impact: neutral, category: 'other') naming the gap. Do NOT pad with weak findings to hit the target.",
     "",
     "For each finding:",
     "- Give it a short stable id (e.g. 'f01', 'f02'...) so the downstream memo can cite it.",
     "- Classify it under one of the schema's enumerated categories.",
     "- Choose impact ∈ {positive, negative, neutral, watch}. 'watch' = the development warrants monitoring but the directional impact isn't clear yet.",
-    "- Write a 1-2 sentence summary and a 1-2 sentence relevance note tying it back to the original memo's thesis.",
-    "- List every source you used. Each source object must have title, url, and (when known) date and a short note.",
+    "- Write `summary` in 2–4 sentences max. Write `relevance` in 1–2 sentences. Number-led where possible. No generic hedging.",
+    "- List every source you used. Each source object must have title, url, tier, and (when known) date and a short note.",
     "- When a finding clearly maps to one of the thesis checkpoints provided in the user prompt, set thesisCheckpointId to that checkpoint id; otherwise null.",
     "",
     "Also produce:",
@@ -124,13 +134,22 @@ function buildResearchUserPrompt(req: ResearchUpdatesRequest): string {
     "- Use web_search to find primary sources. Quote URLs verbatim — do not paraphrase them.",
   );
   lines.push(
-    "- For every finding, copy the exact URL(s) you cited via web_search into that finding's `sources[]` (title + url). Do not invent URLs.",
+    "- For every finding, copy the exact URL(s) you cited via web_search into that finding's `sources[]` (title + url + tier). Do not invent URLs.",
+  );
+  lines.push(
+    "- Set `tier` on EVERY source using the 9-priority hierarchy in the system prompt (official / company / exchange / transcript / press / market_data / other).",
   );
   lines.push(
     "- Every finding with impact ≠ neutral must carry at least one source with a working url.",
   );
   lines.push(
+    "- Findings whose only verified sources are `press` / `market_data` / `other` should set `impact` to `watch` (not `positive`/`negative`); the server will downgrade otherwise.",
+  );
+  lines.push(
     "- The server will downgrade unsourced positive/negative/watch findings to neutral and add a warning.",
+  );
+  lines.push(
+    "- Aim for 6–10 findings with the category balance described in the system prompt. Do NOT fabricate to hit a count.",
   );
   lines.push(
     "- Emit a single JSON object matching the schema. No prose outside the JSON.",

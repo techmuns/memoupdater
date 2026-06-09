@@ -1,7 +1,9 @@
 import type {
+  FinancialBridgeRow,
   FollowUpMemo,
   GenerateFollowUpMemoRequest,
   LlmGenerationWarning,
+  MemoConfidence,
   MemoSection,
   MemoSectionSignal,
   SourceReference,
@@ -25,6 +27,8 @@ const SIGNAL_VALUES: MemoSectionSignal[] = [
   "neutral",
   "watch",
 ];
+
+const CONFIDENCE_VALUES: MemoConfidence[] = ["high", "medium", "low"];
 
 // Anthropic strict mode requires additionalProperties:false on every
 // nested object.
@@ -70,9 +74,31 @@ export const FOLLOW_UP_MEMO_TOOL_SCHEMA: object = {
             },
           },
           confidenceNote: { type: "string" },
+          // Phase 5B: optional per-section confidence label + structured
+          // financial / valuation bridge rows. Anthropic tool schema keeps
+          // these optional (not in `required`), matching the existing
+          // confidenceNote treatment above.
+          confidence: { type: "string", enum: CONFIDENCE_VALUES },
+          bridge: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["metric"],
+              properties: {
+                metric: { type: "string" },
+                original: { type: "string" },
+                latest: { type: "string" },
+                readThrough: { type: "string" },
+              },
+            },
+          },
         },
       },
     },
+    // Phase 5B: top-level sink for residual manual-check items, rendered
+    // once at the foot of the memo (replaces per-section repetition).
+    manualChecksRemaining: { type: "array", items: { type: "string" } },
   },
 };
 
@@ -85,7 +111,7 @@ export const FOLLOW_UP_MEMO_TOOL_SCHEMA: object = {
 export const FOLLOW_UP_MEMO_OPENAI_SCHEMA: object = {
   type: "object",
   additionalProperties: false,
-  required: ["sections"],
+  required: ["sections", "manualChecksRemaining"],
   properties: {
     sections: {
       type: "array",
@@ -101,6 +127,8 @@ export const FOLLOW_UP_MEMO_OPENAI_SCHEMA: object = {
           "signal",
           "sources",
           "confidenceNote",
+          "confidence",
+          "bridge",
         ],
         properties: {
           id: { type: "string", enum: CANONICAL_SECTION_IDS },
@@ -123,8 +151,35 @@ export const FOLLOW_UP_MEMO_OPENAI_SCHEMA: object = {
             },
           },
           confidenceNote: { type: ["string", "null"] },
+          // Phase 5B: required-nullable per OpenAI strict-mode discipline.
+          // Nulls are stripped by normalizeMemoNulls in openai.ts before
+          // parseLlmJson runs.
+          confidence: {
+            type: ["string", "null"],
+            enum: [...CONFIDENCE_VALUES, null],
+          },
+          bridge: {
+            type: ["array", "null"],
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["metric", "original", "latest", "readThrough"],
+              properties: {
+                metric: { type: "string" },
+                original: { type: ["string", "null"] },
+                latest: { type: ["string", "null"] },
+                readThrough: { type: ["string", "null"] },
+              },
+            },
+          },
         },
       },
+    },
+    // Phase 5B: top-level sink for residual manual-check items, rendered
+    // once at the foot of the memo (replaces per-section repetition).
+    manualChecksRemaining: {
+      type: ["array", "null"],
+      items: { type: "string" },
     },
   },
 };
@@ -184,7 +239,59 @@ export function parseLlmJson(
     isDemo: false,
   };
 
+  const manualChecks = parseManualChecksRemaining(input.manualChecksRemaining);
+  if (manualChecks.length > 0) {
+    memo.manualChecksRemaining = manualChecks;
+  }
+
   return { ok: true, memo, warnings };
+}
+
+function parseManualChecksRemaining(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+function parseConfidence(value: unknown): MemoConfidence | undefined {
+  if (typeof value !== "string") return undefined;
+  const lower = value.trim().toLowerCase();
+  if ((CONFIDENCE_VALUES as string[]).includes(lower)) {
+    return lower as MemoConfidence;
+  }
+  return undefined;
+}
+
+function parseBridge(value: unknown): FinancialBridgeRow[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const rows: FinancialBridgeRow[] = [];
+  for (const item of value) {
+    if (!isPlainObject(item)) continue;
+    const metric =
+      typeof item.metric === "string" ? item.metric.trim() : "";
+    if (!metric) continue;
+    const row: FinancialBridgeRow = { metric };
+    if (typeof item.original === "string" && item.original.trim()) {
+      row.original = item.original.trim();
+    }
+    if (typeof item.latest === "string" && item.latest.trim()) {
+      row.latest = item.latest.trim();
+    }
+    if (typeof item.readThrough === "string" && item.readThrough.trim()) {
+      row.readThrough = item.readThrough.trim();
+    }
+    rows.push(row);
+  }
+  return rows.length > 0 ? rows : undefined;
 }
 
 function parseSection(
@@ -219,6 +326,10 @@ function parseSection(
   if (typeof raw.confidenceNote === "string") {
     section.confidenceNote = raw.confidenceNote;
   }
+  const confidence = parseConfidence(raw.confidence);
+  if (confidence) section.confidence = confidence;
+  const bridge = parseBridge(raw.bridge);
+  if (bridge) section.bridge = bridge;
   return { ok: true, section };
 }
 

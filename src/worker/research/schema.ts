@@ -25,6 +25,16 @@ const CHECKPOINT_IMPACT_VALUES = [
   "no_update",
 ] as const;
 
+const SOURCE_TIER_VALUES = [
+  "official",
+  "company",
+  "exchange",
+  "transcript",
+  "press",
+  "market_data",
+  "other",
+] as const;
+
 export const RESEARCH_FINDINGS_OPENAI_SCHEMA: object = {
   type: "object",
   additionalProperties: false,
@@ -79,12 +89,19 @@ export const RESEARCH_FINDINGS_OPENAI_SCHEMA: object = {
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["title", "url", "date", "note"],
+              required: ["title", "url", "date", "note", "tier"],
               properties: {
                 title: { type: "string" },
                 url: { type: "string" },
                 date: { type: ["string", "null"] },
                 note: { type: ["string", "null"] },
+                // Phase 5B: model labels the best-guess source tier;
+                // the worker validator runs a conservative URL/title
+                // override that only ever DOWNGRADES.
+                tier: {
+                  type: ["string", "null"],
+                  enum: [...SOURCE_TIER_VALUES, null],
+                },
               },
             },
           },

@@ -80,6 +80,20 @@ export interface UpdatePack {
 // Forward declaration so MemoSection.signal resolves textually as well as via TS hoisting.
 export type MemoSectionSignal = "positive" | "neutral" | "negative" | "watch";
 
+// Phase 5B: per-section confidence label. Drives the confidence pill in
+// MemoReview and the inline "confidence: X" tag in the Markdown copy.
+export type MemoConfidence = "high" | "medium" | "low";
+
+// Phase 5B: compact bridge row for financial / EPS / valuation sections.
+// All optional except `metric` so the model can leave a column blank
+// rather than invent a value.
+export interface FinancialBridgeRow {
+  metric: string;
+  original?: string;
+  latest?: string;
+  readThrough?: string;
+}
+
 export interface MemoSection {
   id: string;
   title: string;
@@ -89,6 +103,8 @@ export interface MemoSection {
   bullets?: string[];
   signal?: MemoSectionSignal;
   confidenceNote?: string;
+  confidence?: MemoConfidence;
+  bridge?: FinancialBridgeRow[];
 }
 
 export interface FollowUpMemo {
@@ -97,6 +113,9 @@ export interface FollowUpMemo {
   generatedAt: string;
   sections: MemoSection[];
   isDemo: boolean;
+  // Single sink for residual manual-check items, rendered once at the
+  // foot of the memo. Replaces per-section "Needs manual verification."
+  manualChecksRemaining?: string[];
 }
 
 export type GenerationStepStatus = "not_started" | "ready" | "demo_generated";
@@ -361,12 +380,27 @@ export type ResearchFindingCategory =
 
 export type ResearchFindingImpact = "positive" | "negative" | "neutral" | "watch";
 
+// Phase 5B: source-priority tier. The research prompt instructs the
+// model to label each source; the worker validator then runs a
+// conservative URL/title-based override that only ever DOWNGRADES the
+// model's tier (server never upgrades a press source to official). The
+// memo prompt and the UI consume this single normalized value.
+export type SourceTier =
+  | "official"
+  | "company"
+  | "exchange"
+  | "transcript"
+  | "press"
+  | "market_data"
+  | "other";
+
 export interface ResearchSource {
   title: string;
   url: string;
   date?: string;
   note?: string;
   verifiedByWebSearch?: boolean;
+  tier?: SourceTier;
 }
 
 export interface ResearchFinding {

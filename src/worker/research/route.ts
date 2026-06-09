@@ -22,7 +22,12 @@ import {
 import { enforceSourceGrounding, normalizeResearchNulls } from "./validate";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
-const DEFAULT_MAX_OUTPUT_TOKENS = 8_000;
+// Phase 5B: bumped from 8 000 → 12 000 to give the model room for 6–10
+// well-sourced findings with per-category balance + per-source tier
+// labels. HARD_MAX_OUTPUT_TOKENS (the absolute ceiling clampMaxTokens
+// honors) is unchanged; this raises only the default when no override
+// is requested.
+const DEFAULT_MAX_OUTPUT_TOKENS = 12_000;
 const HARD_MAX_OUTPUT_TOKENS = 12_000;
 const GATE_HEADER = "x-memo-llm-gate";
 

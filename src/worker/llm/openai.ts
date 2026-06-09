@@ -411,12 +411,26 @@ function extractOutputText(payload: OpenAIResponsePayload): string {
 // mirrors the "absent = undefined" shape produced by Anthropic's tool_use.
 function normalizeMemoNulls(input: unknown): unknown {
   if (!isPlainObject(input)) return input;
-  const sections = input.sections;
-  if (!Array.isArray(sections)) return input;
+  const out: Record<string, unknown> = { ...input };
+  if (out.manualChecksRemaining === null) delete out.manualChecksRemaining;
+  const sections = out.sections;
+  if (!Array.isArray(sections)) return out;
   const cleanSections = sections.map((s) => {
     if (!isPlainObject(s)) return s;
     const copy: Record<string, unknown> = { ...s };
     if (copy.confidenceNote === null) delete copy.confidenceNote;
+    if (copy.confidence === null) delete copy.confidence;
+    if (copy.bridge === null) delete copy.bridge;
+    if (Array.isArray(copy.bridge)) {
+      copy.bridge = copy.bridge.map((row) => {
+        if (!isPlainObject(row)) return row;
+        const rc: Record<string, unknown> = { ...row };
+        if (rc.original === null) delete rc.original;
+        if (rc.latest === null) delete rc.latest;
+        if (rc.readThrough === null) delete rc.readThrough;
+        return rc;
+      });
+    }
     const sources = copy.sources;
     if (Array.isArray(sources)) {
       copy.sources = sources.map((src) => {
@@ -429,7 +443,8 @@ function normalizeMemoNulls(input: unknown): unknown {
     }
     return copy;
   });
-  return { ...input, sections: cleanSections };
+  out.sections = cleanSections;
+  return out;
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

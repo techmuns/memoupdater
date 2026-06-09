@@ -10,6 +10,7 @@ import type {
   ResearchFinding,
   ResearchFindingImpact,
   ResearchFindings,
+  SourceTier,
 } from "@shared/types";
 import { Badge } from "./ui/Badge";
 import { Panel } from "./ui/Panel";
@@ -26,6 +27,26 @@ const IMPACT_LABEL: Record<ResearchFindingImpact, string> = {
   negative: "Negative",
   neutral: "Neutral",
   watch: "Watch",
+};
+
+const TIER_TONE: Record<SourceTier, "success" | "accent" | "neutral" | "warning"> = {
+  official: "success",
+  company: "success",
+  exchange: "success",
+  transcript: "accent",
+  press: "neutral",
+  market_data: "neutral",
+  other: "warning",
+};
+
+const TIER_LABEL: Record<SourceTier, string> = {
+  official: "official",
+  company: "company",
+  exchange: "exchange",
+  transcript: "transcript",
+  press: "press",
+  market_data: "market data",
+  other: "other",
 };
 
 interface ResearchFindingsCardProps {
@@ -162,15 +183,22 @@ function FindingRow({ finding }: { finding: ResearchFinding }) {
                   />
                 )}
                 <div className="min-w-0">
-                  <a
-                    href={s.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="text-[var(--color-ink)] hover:underline inline-flex items-center gap-1"
-                  >
-                    {s.title || s.url}
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-[var(--color-ink)] hover:underline inline-flex items-center gap-1"
+                    >
+                      {s.title || s.url}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                    {s.tier && (
+                      <Badge tone={TIER_TONE[s.tier]}>
+                        {TIER_LABEL[s.tier]}
+                      </Badge>
+                    )}
+                  </div>
                   <div className="text-[11px] text-[var(--color-text-muted)] truncate">
                     {s.date ? `${s.date} · ` : ""}
                     {s.url}

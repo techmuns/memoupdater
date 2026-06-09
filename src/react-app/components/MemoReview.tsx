@@ -1,9 +1,25 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Copy, FileText } from "lucide-react";
-import type { FollowUpMemo, MemoSection } from "@shared/types";
+import type {
+  FollowUpMemo,
+  MemoConfidence,
+  MemoSection,
+} from "@shared/types";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 import { SIGNAL_BADGE_TONE, SIGNAL_LABEL } from "../lib/signalDisplay";
+
+const CONFIDENCE_TONE: Record<MemoConfidence, "success" | "warning" | "neutral"> = {
+  high: "success",
+  medium: "warning",
+  low: "neutral",
+};
+
+const CONFIDENCE_LABEL: Record<MemoConfidence, string> = {
+  high: "Confidence: High",
+  medium: "Confidence: Medium",
+  low: "Confidence: Low",
+};
 
 interface MemoReviewProps {
   memo: FollowUpMemo;
@@ -80,6 +96,28 @@ export function MemoReview({
             isFirst={i === 0}
           />
         ))}
+        {memo.manualChecksRemaining && memo.manualChecksRemaining.length > 0 && (
+          <section className="pt-10">
+            <div className="hairline mb-10" />
+            <h3
+              className="text-[16px] font-semibold tracking-tight text-[var(--color-text)] mb-3"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              Manual checks remaining
+            </h3>
+            <ul className="space-y-1.5 list-disc pl-5">
+              {memo.manualChecksRemaining.map((item, i) => (
+                <li
+                  key={i}
+                  className="text-[13.5px] text-[var(--color-text-muted)] leading-[1.6]"
+                  style={{ fontFamily: "var(--font-serif)" }}
+                >
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </article>
     </div>
   );
@@ -116,6 +154,11 @@ function SectionView({
             {SIGNAL_LABEL[section.signal]}
           </Badge>
         )}
+        {section.confidence && (
+          <Badge tone={CONFIDENCE_TONE[section.confidence]}>
+            {CONFIDENCE_LABEL[section.confidence]}
+          </Badge>
+        )}
       </div>
       {section.summary && section.summary !== section.body && (
         <p
@@ -125,9 +168,12 @@ function SectionView({
           {section.summary}
         </p>
       )}
+      {section.bridge && section.bridge.length > 0 && (
+        <BridgeTable rows={section.bridge} />
+      )}
       {section.body && (
         <p
-          className="text-[15.5px] text-[var(--color-text)] leading-[1.7]"
+          className="text-[15.5px] text-[var(--color-text)] leading-[1.7] whitespace-pre-line"
           style={{ fontFamily: "var(--font-serif)" }}
         >
           {section.body}
@@ -190,6 +236,60 @@ function SectionView({
   );
 }
 
+function BridgeTable({
+  rows,
+}: {
+  rows: NonNullable<MemoSection["bridge"]>;
+}) {
+  return (
+    <div className="my-3 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)]">
+      <table className="w-full text-[13px] border-collapse">
+        <thead className="bg-[var(--color-surface-muted)]">
+          <tr className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">
+            <th className="text-left font-semibold px-3 py-2">Metric</th>
+            <th className="text-left font-semibold px-3 py-2">Original anchor</th>
+            <th className="text-left font-semibold px-3 py-2">Latest</th>
+            <th className="text-left font-semibold px-3 py-2">Read-through</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr
+              key={i}
+              className={i === 0 ? "" : "border-t border-[var(--color-border)]"}
+            >
+              <td
+                className="px-3 py-2 font-medium text-[var(--color-text)] align-top"
+                style={{ fontFamily: "var(--font-serif)" }}
+              >
+                {row.metric}
+              </td>
+              <td
+                className="px-3 py-2 text-[var(--color-text-muted)] align-top"
+                style={{ fontFamily: "var(--font-serif)" }}
+              >
+                {row.original || "—"}
+              </td>
+              <td
+                className="px-3 py-2 text-[var(--color-text)] align-top"
+                style={{ fontFamily: "var(--font-serif)" }}
+              >
+                {row.latest || "—"}
+              </td>
+              <td
+                className="px-3 py-2 text-[var(--color-text-muted)] italic align-top"
+                style={{ fontFamily: "var(--font-serif)" }}
+              >
+                {row.readThrough || "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function buildMarkdown(memo: FollowUpMemo): string {
   const lines: string[] = [
     `# ${memo.title}`,
@@ -198,8 +298,20 @@ function buildMarkdown(memo: FollowUpMemo): string {
     "",
   ];
   memo.sections.forEach((s, i) => {
-    lines.push(`## ${i + 1}. ${s.title}`);
+    const confTag = s.confidence
+      ? `  _(confidence: ${s.confidence})_`
+      : "";
+    lines.push(`## ${i + 1}. ${s.title}${confTag}`);
     if (s.summary) lines.push(s.summary);
+    if (s.bridge && s.bridge.length > 0) {
+      lines.push("", "| Metric | Original anchor | Latest | Read-through |");
+      lines.push("| --- | --- | --- | --- |");
+      for (const row of s.bridge) {
+        lines.push(
+          `| ${escapePipe(row.metric)} | ${escapePipe(row.original ?? "—")} | ${escapePipe(row.latest ?? "—")} | ${escapePipe(row.readThrough ?? "—")} |`,
+        );
+      }
+    }
     if (s.body && s.body !== s.summary) lines.push("", s.body);
     if (s.bullets && s.bullets.length > 0) {
       lines.push("");
@@ -219,5 +331,16 @@ function buildMarkdown(memo: FollowUpMemo): string {
     }
     lines.push("");
   });
+  if (memo.manualChecksRemaining && memo.manualChecksRemaining.length > 0) {
+    lines.push("## Manual checks remaining", "");
+    for (const item of memo.manualChecksRemaining) {
+      lines.push(`- ${item}`);
+    }
+    lines.push("");
+  }
   return lines.join("\n");
+}
+
+function escapePipe(value: string): string {
+  return value.replace(/\|/g, "\\|");
 }
