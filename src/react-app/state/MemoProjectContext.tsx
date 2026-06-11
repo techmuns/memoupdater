@@ -15,6 +15,7 @@ import type {
   FollowUpMemo,
   LlmGenerationErrorCode,
   LlmGenerationState,
+  LlmGenerationWarning,
   LlmStatusResponse,
   LocalUploadedFile,
   MemoDNA,
@@ -146,6 +147,10 @@ type Action =
       type: "SET_UNDERSTANDING";
       understanding: MemoUnderstanding;
       providerMetadata: { providerName: "openai"; modelUsed: string };
+      // Phase 6A.3: thread provider warnings (baseline_recovery /
+      // baseline_after_timeout / schema_warning) so MemoUnderstandingCard
+      // can render the "Recovered from memo text" ribbon.
+      warnings?: LlmGenerationWarning[];
     }
   | {
       type: "SET_UNDERSTANDING_ERROR";
@@ -437,7 +442,7 @@ function reducer(state: State, action: Action): State {
           kind: "success",
           understanding: action.understanding,
           providerMetadata: action.providerMetadata,
-          warnings: [],
+          warnings: action.warnings ?? [],
         },
         // Successful understanding implicitly clears any prior
         // emergency-skip flag — memo-specific research is the
@@ -639,6 +644,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
           providerName: "openai",
           modelUsed: response.providerMetadata.modelUsed,
         },
+        warnings: response.warnings,
       });
       return;
     }

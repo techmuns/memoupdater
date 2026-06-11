@@ -527,7 +527,14 @@ export type LlmGenerationErrorCode =
   | "rate_limited";
 
 export interface LlmGenerationWarning {
-  code: LlmGenerationErrorCode | "schema_warning";
+  // Phase 6A.3: "baseline_recovery" + "baseline_after_timeout" added —
+  // emitted by the deterministic memo-baseline tier so the dashboard can
+  // render the "Recovered from memo text" ribbon.
+  code:
+    | LlmGenerationErrorCode
+    | "schema_warning"
+    | "baseline_recovery"
+    | "baseline_after_timeout";
   message: string;
 }
 

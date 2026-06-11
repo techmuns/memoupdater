@@ -49,6 +49,7 @@ import {
   expandUltraCompactToFull,
   parseUltraCompactJson,
 } from "./ultraCompact";
+import { buildBaselineMemoUnderstanding } from "./baseline";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const UNDERSTAND_MAX_OUTPUT_TOKENS = 2_400;
@@ -198,6 +199,23 @@ export async function handleMemoUnderstand(
           validation.value,
           readiness,
           apiKey,
+        );
+      }
+      // Phase 6A.3: on primary-call timeout (and ONLY timeout — never
+      // user abort, never auth/config/access-denied), fall through to
+      // the deterministic baseline rather than wait for two more
+      // structured-output retries that will likely time out the same
+      // way. User-abort signals carry message "LLM request was
+      // aborted" from openai.ts; treat those as terminal.
+      if (
+        call.code === "timeout" &&
+        !/aborted/i.test(call.message ?? "")
+      ) {
+        return tryDeterministicBaseline(
+          c,
+          validation.value,
+          readiness,
+          "primary_timeout",
         );
       }
       return c.json(
@@ -497,16 +515,88 @@ async function tryUltraCompact(
     }
   }
 
-  // Ultra-compact also failed. Return safe parse_error.
-  logOutcome("parse_error", request.project.id);
-  return c.json(
-    buildSafeFailure(
-      "parse_error",
-      "Memo understanding could not be parsed after primary, repair, and ultra-compact attempts.",
-      "openai",
-      readiness.model,
-    ),
+  // Phase 6A.3: ultra-compact also failed for parse/structured-output
+  // reasons. Hand off to the deterministic baseline tier rather than
+  // ship a parse_error.
+  return tryDeterministicBaseline(
+    c,
+    request,
+    readiness,
+    "ultra_compact_parse_failed",
   );
+}
+
+async function tryDeterministicBaseline(
+  c: Context<{ Bindings: Env }>,
+  request: MemoUnderstandRequest,
+  readiness: ReturnType<typeof evaluateLlmReadiness>,
+  reason: "ultra_compact_parse_failed" | "primary_timeout",
+): Promise<Response> {
+  console.log(
+    JSON.stringify({
+      event: "llm_understand_deterministic_baseline_enter",
+      projectId: request.project.id,
+      reason,
+    }),
+  );
+  const baseline = buildBaselineMemoUnderstanding({
+    projectId: request.project.id,
+    companyName: request.project.companyName,
+    ticker: request.project.ticker,
+    extractedText: request.memo.text,
+    dna: request.dna,
+    detection: request.detection,
+    recoveryReason: reason,
+  });
+  const validated = parseUnderstandJson(baseline, request.project.id);
+  if (!validated.ok) {
+    // Defense in depth — the baseline is shape-correct by construction.
+    // If we ever land here it's a builder bug; surface the original
+    // parse_error so the operator notices.
+    logOutcome("parse_error", request.project.id);
+    return c.json(
+      buildSafeFailure(
+        "parse_error",
+        "Memo understanding could not be parsed after primary, repair, ultra-compact, and deterministic baseline attempts.",
+        "openai",
+        readiness.model,
+      ),
+    );
+  }
+  // Counts-only outcome log — never the memo text, snippets, or quotes.
+  console.log(
+    JSON.stringify({
+      event: "llm_understand_outcome",
+      projectId: request.project.id,
+      outcome: reason === "primary_timeout" ? "baseline_after_timeout" : "deterministic_baseline",
+      flagCount: validated.understanding.flaggedDetails.length,
+      pillarCount: validated.understanding.thesis.thesisPillars.length,
+      taskCount: validated.understanding.researchPlan.researchTasks.length,
+      confidence: validated.understanding.confidence.extractionConfidence,
+    }),
+  );
+  const warning =
+    reason === "primary_timeout"
+      ? {
+          code: "baseline_after_timeout" as const,
+          message:
+            "Memo understanding recovered from deterministic memo baseline after LLM timeout.",
+        }
+      : {
+          code: "baseline_recovery" as const,
+          message:
+            "Memo understanding recovered from deterministic memo baseline after LLM structured-output failure.",
+        };
+  const body: MemoUnderstandResponse = {
+    ok: true,
+    understanding: validated.understanding,
+    providerMetadata: {
+      providerName: "openai",
+      modelUsed: readiness.model ?? "unknown",
+    },
+    warnings: [warning],
+  };
+  return c.json(body);
 }
 
 const REPAIR_SYSTEM = [

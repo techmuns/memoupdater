@@ -9,6 +9,7 @@ import {
   ChevronRight,
   FileSearch,
   GitMerge,
+  Info,
   Layers,
   Loader2,
   MessageSquareQuote,
@@ -207,6 +208,7 @@ export function MemoUnderstandingCard({
     return (
       <SuccessSnapshot
         understanding={state.understanding}
+        warnings={state.warnings}
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
         onRerun={onRerun}
@@ -219,11 +221,13 @@ export function MemoUnderstandingCard({
 
 function SuccessSnapshot({
   understanding,
+  warnings,
   expanded,
   onToggle,
   onRerun,
 }: {
   understanding: MemoUnderstanding;
+  warnings: import("@shared/types").LlmGenerationWarning[];
   expanded: boolean;
   onToggle: () => void;
   onRerun: () => void;
@@ -264,6 +268,16 @@ function SuccessSnapshot({
   }
 
   const top3Tasks = understanding.researchPlan.researchTasks.slice(0, 3);
+
+  // Phase 6A.3: detect deterministic-baseline recovery warnings.
+  // baseline_recovery → LLM structured-output failed; we rebuilt from the
+  // uploaded memo text. baseline_after_timeout → LLM timed out; same
+  // recovery. Either case renders a subtle "Recovered from memo text"
+  // ribbon at the top of the snapshot body. Research stays unblocked
+  // because state.kind === "success".
+  const baselineWarning = warnings.find(
+    (w) => w.code === "baseline_recovery" || w.code === "baseline_after_timeout",
+  );
 
   return (
     <section
@@ -313,6 +327,25 @@ function SuccessSnapshot({
               </span>
             </span>
           ))}
+        </div>
+      )}
+
+      {baselineWarning && (
+        <div
+          className="mb-3 flex items-start gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5"
+          role="status"
+        >
+          <Info className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-text-muted)]" strokeWidth={1.75} />
+          <div className="min-w-0">
+            <div className="text-[12px] font-semibold text-[var(--color-text)]">
+              {baselineWarning.code === "baseline_after_timeout"
+                ? "Recovered from memo text after timeout"
+                : "Recovered from memo text"}
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-[var(--color-text-muted)] leading-snug">
+              AI structured extraction failed, so this snapshot was rebuilt from the uploaded memo text. Review the flagged details before research.
+            </div>
+          </div>
         </div>
       )}
 
