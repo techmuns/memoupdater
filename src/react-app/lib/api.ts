@@ -8,6 +8,8 @@ import type {
   LlmStatusResponse,
   MemoDNA,
   MemoProject,
+  MemoUnderstandRequest,
+  MemoUnderstandResponse,
   ResearchPassRequest,
   ResearchPassResponse,
   ResearchUpdatesRequest,
@@ -105,6 +107,18 @@ export const api = {
   ) =>
     postJson<ResearchPassResponse, ResearchPassRequest>(
       "/api/research/pass",
+      req,
+      {
+        signal,
+        headers: gateHeader(),
+      },
+    ),
+  memoUnderstand: (
+    req: MemoUnderstandRequest,
+    signal?: AbortSignal,
+  ) =>
+    postJson<MemoUnderstandResponse, MemoUnderstandRequest>(
+      "/api/memo/understand",
       req,
       {
         signal,

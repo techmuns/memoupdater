@@ -430,6 +430,10 @@ export interface ResearchFinding {
   relevance: string;
   sources: ResearchSource[];
   thesisCheckpointId?: string;
+  // Phase 6A: optional links to MemoUnderstanding ids so research findings
+  // can be threaded back to specific memo flags / research tasks.
+  linkedFlagId?: string;
+  linkedResearchTaskId?: string;
 }
 
 export interface ResearchThesisCheckpointImpact {
@@ -596,6 +600,11 @@ export interface GenerateMemoSectionRequest {
   styleSample?: string[];
   initialMemoId?: string;
   priorSectionsDigest?: MemoSectionDigestEntry[];
+  // Phase 6A: optional MemoUnderstanding digest. When present, section
+  // prompts add memo-specific anchors (thesis pillars, flagged details,
+  // valuation framework) for sec_memo_held / sec_memo_broke / sec_eps_bridge
+  // / sec_valuation_peer_gap / sec_final_action.
+  memoUnderstandingDigest?: MemoUnderstandingDigest;
   retryCompact?: boolean;
 }
 
@@ -684,6 +693,12 @@ export interface ResearchPassRequest {
   dna: ResearchPassCompactDna;
   detection: ResearchDetectionInput;
   thesisCheckpoints?: ThesisCheckpoint[];
+  // Phase 6A: optional MemoUnderstanding digest + per-pass task list.
+  // When the digest is present, the pass prompt renders the
+  // "Memo-specific anchor for this pass" block listing thesis pillars,
+  // flagged details, and research questions selected for this passId.
+  memoUnderstandingDigest?: MemoUnderstandingDigest;
+  passMemoTasks?: MemoUnderstandingResearchTask[];
   retryCompact?: boolean;
 }
 
@@ -740,3 +755,268 @@ export interface ResearchProgress {
   passes: ResearchPassRunState[];
   failedPassIds: ResearchPassId[];
 }
+
+// ---------- Phase 6A additions: Memo Understanding Engine ----------
+
+export type MemoUnderstandingImportance =
+  | "critical"
+  | "high"
+  | "medium"
+  | "low";
+
+export type MemoUnderstandingResearchPriority =
+  | "must_check"
+  | "important"
+  | "nice_to_have";
+
+export type MemoUnderstandingClaimType =
+  | "reported"
+  | "forecast"
+  | "estimate"
+  | "guidance"
+  | "assumption";
+
+export type MemoUnderstandingFlagCategory =
+  | "valuation_anchor"
+  | "financial_claim"
+  | "segment_driver"
+  | "margin_driver"
+  | "earnings_quality"
+  | "management_claim"
+  | "catalyst"
+  | "risk"
+  | "source_gap"
+  | "contradiction"
+  | "must_verify";
+
+export type MemoUnderstandingSourcePriority =
+  | "company_filings"
+  | "exchange_filings"
+  | "earnings_call"
+  | "investor_presentation"
+  | "broker_notes"
+  | "market_data"
+  | "press";
+
+export interface MemoUnderstandingFlaggedDetail {
+  id: string;
+  label: string;
+  detail: string;
+  category: MemoUnderstandingFlagCategory;
+  importance: MemoUnderstandingImportance;
+  whyItMatters: string;
+  memoEvidence: string;
+  researchQuestion: string;
+}
+
+export interface MemoUnderstandingThesisPillar {
+  id: string;
+  label: string;
+  originalClaim: string;
+  evidenceFromMemo: string;
+  importance: "high" | "medium" | "low";
+  needsResearch: boolean;
+  researchPriority: MemoUnderstandingResearchPriority;
+}
+
+export interface MemoUnderstandingFinancialClaim {
+  id: string;
+  metric: string;
+  value: string;
+  period?: string;
+  segment?: string;
+  claimType: MemoUnderstandingClaimType;
+  whyItMatters: string;
+  researchQuestion: string;
+}
+
+export interface MemoUnderstandingSegmentClaim {
+  id: string;
+  segment: string;
+  claim: string;
+  metric?: string;
+  value?: string;
+  period?: string;
+  importance: "high" | "medium" | "low";
+  researchQuestion: string;
+}
+
+export interface MemoUnderstandingResearchTask {
+  id: string;
+  label: string;
+  question: string;
+  memoAnchor: string;
+  linkedFlagIds: string[];
+  linkedPillarIds: string[];
+  linkedFinancialClaimIds: string[];
+  preferredSources: MemoUnderstandingSourcePriority[];
+  expectedEvidence: string;
+  priority: MemoUnderstandingResearchPriority;
+}
+
+export interface MemoUnderstanding {
+  projectId: string;
+  company: {
+    detectedName: string;
+    normalizedName?: string;
+    ticker?: string;
+    aliases: string[];
+    sector?: string;
+    geography?: string;
+  };
+  memo: {
+    broker?: string;
+    author?: string;
+    publishedDate?: string;
+    periodCovered?: string;
+    reportType?: string;
+    recommendation?: string;
+    targetPrice?: string;
+    currentPriceAtMemo?: string;
+    upsideAtMemo?: string;
+    timeHorizon?: string;
+  };
+  summary: {
+    oneLineSummary: string;
+    shortSummary: string;
+    originalThesis: string;
+    whatTheMemoNeedsToBeRight: string[];
+    whatWouldChangeTheView: string[];
+  };
+  flaggedDetails: MemoUnderstandingFlaggedDetail[];
+  thesis: {
+    oneLineThesis: string;
+    detailedThesis: string;
+    thesisPillars: MemoUnderstandingThesisPillar[];
+  };
+  financials: {
+    keyClaims: MemoUnderstandingFinancialClaim[];
+    segmentClaims: MemoUnderstandingSegmentClaim[];
+  };
+  valuation: {
+    method?: string;
+    targetMultiple?: string;
+    targetMetric?: string;
+    impliedEPS?: string;
+    targetPrice?: string;
+    upside?: string;
+    keyValuationAssumptions: string[];
+    valuationQuestionsToUpdate: string[];
+  };
+  risksAndCatalysts: {
+    catalysts: string[];
+    risks: string[];
+    watchItems: string[];
+  };
+  researchPlan: {
+    mustAnswerQuestions: string[];
+    sourcePriorities: MemoUnderstandingSourcePriority[];
+    researchTasks: MemoUnderstandingResearchTask[];
+  };
+  confidence: {
+    extractionConfidence: "high" | "medium" | "low";
+    missingFromMemo: string[];
+    ambiguousItems: string[];
+  };
+}
+
+// Compact form sent to /api/research/pass and /api/generate/memo-section.
+// Caps enforced by buildMemoUnderstandingDigest (frontend pure helper).
+export interface MemoUnderstandingDigest {
+  projectId: string;
+  oneLineSummary: string;
+  recommendation?: string;
+  targetPrice?: string;
+  valuation: {
+    method?: string;
+    targetMultiple?: string;
+    impliedEPS?: string;
+  };
+  thesisPillars: Array<{
+    id: string;
+    label: string;
+    importance: "high" | "medium" | "low";
+    researchPriority: MemoUnderstandingResearchPriority;
+  }>;
+  flaggedDetails: Array<
+    Pick<
+      MemoUnderstandingFlaggedDetail,
+      | "id"
+      | "label"
+      | "detail"
+      | "category"
+      | "importance"
+      | "whyItMatters"
+      | "researchQuestion"
+    >
+  >;
+  financialClaims: Array<
+    Pick<
+      MemoUnderstandingFinancialClaim,
+      | "id"
+      | "metric"
+      | "value"
+      | "period"
+      | "claimType"
+      | "whyItMatters"
+      | "researchQuestion"
+    >
+  >;
+  researchTasks: Array<
+    Pick<
+      MemoUnderstandingResearchTask,
+      | "id"
+      | "question"
+      | "memoAnchor"
+      | "linkedFlagIds"
+      | "linkedPillarIds"
+      | "preferredSources"
+      | "priority"
+    >
+  >;
+}
+
+export interface MemoUnderstandRequest {
+  project: {
+    id: string;
+    ticker?: string;
+    companyName: string;
+    sector?: string;
+  };
+  detection?: ResearchDetectionInput;
+  memo: {
+    id?: string;
+    text: string;
+    sourceFilename: string;
+    sizeBytes: number;
+  };
+  dna?: MemoDNA;
+}
+
+export type MemoUnderstandErrorCode = ResearchErrorCode;
+
+export type MemoUnderstandResponse =
+  | {
+      ok: true;
+      understanding: MemoUnderstanding;
+      providerMetadata: LlmProviderMetadata;
+      warnings: LlmGenerationWarning[];
+    }
+  | {
+      ok: false;
+      code: MemoUnderstandErrorCode;
+      message: string;
+      providerName?: LlmProviderName;
+      modelUsed?: string;
+    };
+
+export type MemoUnderstandingState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | {
+      kind: "success";
+      understanding: MemoUnderstanding;
+      providerMetadata: LlmProviderMetadata;
+      warnings: LlmGenerationWarning[];
+    }
+  | { kind: "error"; code: MemoUnderstandErrorCode; message: string };

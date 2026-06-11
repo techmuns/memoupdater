@@ -20,6 +20,9 @@ import type {
   MemoDNA,
   MemoGenerationProgress,
   MemoSection,
+  MemoUnderstanding,
+  MemoUnderstandErrorCode,
+  MemoUnderstandingState,
   PeriodDetectionResult,
   ResearchErrorCode,
   ResearchFindings,
@@ -52,6 +55,7 @@ import {
   detectionToResearchDetectionInput,
   runResearchPasses,
 } from "../lib/researchPasses";
+import { buildMemoUnderstandingDigest } from "../lib/memoUnderstandingSummary";
 import { getLlmGateToken } from "../lib/llmGateToken";
 
 const GATE_TOKEN_POLL_KEY = "memo.llm.gate";
@@ -79,6 +83,12 @@ interface State {
   llmProviderStatus: LlmStatusResponse | null;
   demoFollowUpMemo: FollowUpMemo | null;
   gateTokenSet: boolean;
+  // Phase 6A: Memo Understanding Engine state.
+  understanding: MemoUnderstandingState;
+  // Emergency / developer-only escape: when true, the Research button
+  // skips the requirement that memoUnderstanding succeed first. Surfaced
+  // only inside a <details> disclosure in MemoUnderstandingCard.
+  skipUnderstanding: boolean;
 }
 
 type Action =
@@ -131,6 +141,18 @@ type Action =
   | { type: "SET_LLM_PROVIDER_STATUS"; status: LlmStatusResponse | null }
   | { type: "SET_DEMO_MEMO"; memo: FollowUpMemo | null }
   | { type: "SET_GATE_TOKEN_SET"; value: boolean }
+  | { type: "START_UNDERSTAND" }
+  | {
+      type: "SET_UNDERSTANDING";
+      understanding: MemoUnderstanding;
+      providerMetadata: { providerName: "openai"; modelUsed: string };
+    }
+  | {
+      type: "SET_UNDERSTANDING_ERROR";
+      code: MemoUnderstandErrorCode;
+      message: string;
+    }
+  | { type: "SET_SKIP_UNDERSTANDING"; value: boolean }
   | { type: "RESET" };
 
 function buildInitialProgress(): MemoGenerationProgress {
@@ -176,6 +198,8 @@ const initialState: State = {
   llmProviderStatus: null,
   demoFollowUpMemo: null,
   gateTokenSet: false,
+  understanding: { kind: "idle" },
+  skipUnderstanding: false,
 };
 
 function reducer(state: State, action: Action): State {
@@ -209,6 +233,10 @@ function reducer(state: State, action: Action): State {
         llm: { kind: "idle" },
         progress: buildInitialProgress(),
         completedSections: {},
+        // Phase 6A: a new memo invalidates any prior understanding +
+        // resets the escape-hatch flag.
+        understanding: { kind: "idle" },
+        skipUnderstanding: false,
       };
     case "SET_PERIOD_OVERRIDE":
       return {
@@ -400,6 +428,33 @@ function reducer(state: State, action: Action): State {
       return { ...state, demoFollowUpMemo: action.memo };
     case "SET_GATE_TOKEN_SET":
       return { ...state, gateTokenSet: action.value };
+    case "START_UNDERSTAND":
+      return { ...state, understanding: { kind: "loading" } };
+    case "SET_UNDERSTANDING":
+      return {
+        ...state,
+        understanding: {
+          kind: "success",
+          understanding: action.understanding,
+          providerMetadata: action.providerMetadata,
+          warnings: [],
+        },
+        // Successful understanding implicitly clears any prior
+        // emergency-skip flag — memo-specific research is the
+        // expected path again.
+        skipUnderstanding: false,
+      };
+    case "SET_UNDERSTANDING_ERROR":
+      return {
+        ...state,
+        understanding: {
+          kind: "error",
+          code: action.code,
+          message: action.message,
+        },
+      };
+    case "SET_SKIP_UNDERSTANDING":
+      return { ...state, skipUnderstanding: action.value };
     case "RESET":
       return {
         ...initialState,
@@ -408,6 +463,8 @@ function reducer(state: State, action: Action): State {
         llmProviderStatus: state.llmProviderStatus,
         demoFollowUpMemo: state.demoFollowUpMemo,
         gateTokenSet: state.gateTokenSet,
+        understanding: { kind: "idle" },
+        skipUnderstanding: false,
       };
   }
 }
@@ -432,6 +489,10 @@ interface MemoProjectContextValue {
   refreshLlmProviderStatus: () => Promise<void>;
   syncGateTokenSet: () => void;
   startOver: () => void;
+  // Phase 6A
+  runMemoUnderstanding: () => Promise<void>;
+  rerunMemoUnderstanding: () => Promise<void>;
+  skipMemoUnderstanding: () => void;
 }
 
 const Ctx = createContext<MemoProjectContextValue | null>(null);
@@ -440,6 +501,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const researchAbort = useRef<AbortController | null>(null);
   const generateAbort = useRef<AbortController | null>(null);
+  const understandAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     api
@@ -525,6 +587,117 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     Map<ResearchPassId, ResearchPassResponse & { ok: true }>
   >(new Map());
 
+  // Phase 6A: Memo Understanding Engine.
+  const runMemoUnderstandingOrchestrated = useCallback(async (): Promise<void> => {
+    if (!state.dna || !state.extraction || !state.initialFile) return;
+    const companyName =
+      state.periodOverride.detectedCompany ??
+      state.detection?.detectedCompany ??
+      state.initialFile.filename.replace(/\.[^.]+$/, "");
+    const ticker = state.detection?.detectedTicker;
+    const detection = state.detection
+      ? detectionToResearchDetectionInput(state.detection, companyName)
+      : undefined;
+
+    understandAbort.current?.abort();
+    const controller = new AbortController();
+    understandAbort.current = controller;
+    dispatch({ type: "START_UNDERSTAND" });
+
+    let response: Awaited<ReturnType<typeof api.memoUnderstand>> | null = null;
+    let networkMessage = "";
+    try {
+      response = await api.memoUnderstand(
+        {
+          project: {
+            id: state.dna.projectId,
+            ticker,
+            companyName,
+          },
+          detection,
+          memo: {
+            id: state.initialFile.id,
+            text: state.extraction.text,
+            sourceFilename: state.extraction.source.filename,
+            sizeBytes: state.extraction.source.sizeBytes,
+          },
+          dna: state.dna,
+        },
+        controller.signal,
+      );
+    } catch (err) {
+      networkMessage = err instanceof Error ? err.message : "Network error";
+    }
+    if (understandAbort.current !== controller) return;
+    understandAbort.current = null;
+
+    if (response && response.ok) {
+      dispatch({
+        type: "SET_UNDERSTANDING",
+        understanding: response.understanding,
+        providerMetadata: {
+          providerName: "openai",
+          modelUsed: response.providerMetadata.modelUsed,
+        },
+      });
+      return;
+    }
+    if (response) {
+      dispatch({
+        type: "SET_UNDERSTANDING_ERROR",
+        code: response.code,
+        message: response.message,
+      });
+      return;
+    }
+    dispatch({
+      type: "SET_UNDERSTANDING_ERROR",
+      code: "provider_error",
+      message: networkMessage || "Network error",
+    });
+  }, [
+    state.dna,
+    state.extraction,
+    state.initialFile,
+    state.detection,
+    state.periodOverride.detectedCompany,
+  ]);
+
+  const runMemoUnderstanding = useCallback(
+    (): Promise<void> => runMemoUnderstandingOrchestrated(),
+    [runMemoUnderstandingOrchestrated],
+  );
+  const rerunMemoUnderstanding = useCallback(
+    (): Promise<void> => runMemoUnderstandingOrchestrated(),
+    [runMemoUnderstandingOrchestrated],
+  );
+  const skipMemoUnderstanding = useCallback((): void => {
+    dispatch({ type: "SET_SKIP_UNDERSTANDING", value: true });
+  }, []);
+
+  // Auto-run memo understanding once DNA + extraction are ready and the
+  // provider is configured. Only fires on the idle→loading transition
+  // (the dependency check) so subsequent re-renders don't re-trigger.
+  const understandKind = state.understanding.kind;
+  const llmReadyForUnderstand =
+    state.llmProviderStatus?.llmReady === true &&
+    state.llmProviderStatus?.researchAvailable === true;
+  const understandGateBlocking =
+    state.llmProviderStatus?.gateEnabled === true && !state.gateTokenSet;
+  useEffect(() => {
+    if (understandKind !== "idle") return;
+    if (!state.dna || !state.extraction) return;
+    if (!llmReadyForUnderstand || understandGateBlocking) return;
+    void runMemoUnderstandingOrchestrated();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    understandKind,
+    state.dna,
+    state.extraction,
+    llmReadyForUnderstand,
+    understandGateBlocking,
+  ]);
+
   const runResearchOrchestrated = useCallback(
     async (mode: "fresh" | "retry_failed"): Promise<void> => {
       if (!state.dna || !state.extraction || !state.initialFile) return;
@@ -551,6 +724,13 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       baseDetection.periodLabel = periodLabel;
       baseDetection.researchStart = state.periodOverride.researchStart;
 
+      const understanding =
+        state.understanding.kind === "success"
+          ? state.understanding.understanding
+          : null;
+      const memoUnderstandingDigest = understanding
+        ? buildMemoUnderstandingDigest(understanding)
+        : undefined;
       const baseRequest = {
         project: {
           id: state.dna.projectId,
@@ -560,6 +740,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
         companyAliases: aliases,
         dna: compactDna,
         detection: baseDetection,
+        memoUnderstandingDigest,
       };
 
       const passesToRun =
@@ -657,6 +838,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       state.detection,
       state.periodOverride,
       state.researchProgress.failedPassIds,
+      state.understanding,
     ],
   );
 
@@ -709,6 +891,13 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       });
       dispatch({ type: "SET_LLM_STATE", state: { kind: "loading" } });
 
+      const understandingForGen =
+        state.understanding.kind === "success"
+          ? state.understanding.understanding
+          : null;
+      const memoUnderstandingDigestForGen = understandingForGen
+        ? buildMemoUnderstandingDigest(understandingForGen)
+        : undefined;
       const result = await runSectionGeneration({
         project: {
           id: state.dna.projectId,
@@ -729,6 +918,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
           : undefined,
         research,
         initialMemoId: state.initialFile.id,
+        memoUnderstandingDigest: memoUnderstandingDigestForGen,
         apiCall: (req, signal) => api.generateMemoSection(req, signal),
         signal: controller.signal,
         onSectionStart: (sectionId, attempt) => {
@@ -795,6 +985,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       state.periodOverride,
       state.progress.failedSectionId,
       state.completedSections,
+      state.understanding,
     ],
   );
 
@@ -857,6 +1048,9 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       refreshLlmProviderStatus,
       syncGateTokenSet,
       startOver,
+      runMemoUnderstanding,
+      rerunMemoUnderstanding,
+      skipMemoUnderstanding,
     };
   }, [
     state,
@@ -871,6 +1065,9 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     refreshLlmProviderStatus,
     syncGateTokenSet,
     startOver,
+    runMemoUnderstanding,
+    rerunMemoUnderstanding,
+    skipMemoUnderstanding,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

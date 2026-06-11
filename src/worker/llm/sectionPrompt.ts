@@ -1,6 +1,7 @@
 import type {
   CanonicalSectionId,
   GenerateMemoSectionRequest,
+  MemoUnderstandingDigest,
 } from "@shared/types";
 
 export const CANONICAL_SECTION_IDS: readonly CanonicalSectionId[] = [
@@ -346,6 +347,14 @@ function buildUserPrompt(req: GenerateMemoSectionRequest): string {
     }
   }
 
+  // Phase 6A: memo-specific anchor. When present, give the section a
+  // memo-anchored "what the original memo argued" recap so the section
+  // body answers "does this still hold?" rather than drifting into
+  // generic company commentary.
+  if (req.memoUnderstandingDigest) {
+    appendMemoUnderstandingContext(lines, sectionId, req.memoUnderstandingDigest);
+  }
+
   lines.push("# 5. Cross-finding context");
   if (positiveDevelopmentIds && positiveDevelopmentIds.length > 0) {
     lines.push(
@@ -444,4 +453,85 @@ function truncate(value: string, max: number): string {
   const s = value.trim();
   if (s.length <= max) return s;
   return `${s.slice(0, Math.max(0, max - 1))}…`;
+}
+
+// Phase 6A: memo-understanding anchor block for section prompts.
+// Provides the section model with:
+//   - the original memo's one-line thesis + recommendation/target
+//   - top thesis pillars (must_check first)
+//   - top flagged details (importance-sorted)
+//   - original valuation framework
+//   - section-relevant financial claims (sec_q4_retest /
+//     sec_eps_bridge / sec_valuation_peer_gap)
+// This makes the section answer "does the memo still hold?" anchored on
+// the memo's specific claims rather than drifting generic.
+const MEMO_HELD_BROKE_SECTIONS = new Set<CanonicalSectionId>([
+  "sec_memo_held",
+  "sec_memo_broke",
+  "sec_eps_bridge",
+  "sec_valuation_peer_gap",
+  "sec_final_action",
+]);
+
+const FINANCIALS_SECTIONS = new Set<CanonicalSectionId>([
+  "sec_q4_retest",
+  "sec_eps_bridge",
+  "sec_valuation_peer_gap",
+]);
+
+function appendMemoUnderstandingContext(
+  lines: string[],
+  sectionId: CanonicalSectionId,
+  digest: MemoUnderstandingDigest,
+): void {
+  lines.push("");
+  lines.push("# 4b. Original memo's anchor");
+  lines.push(
+    `Original memo's one-line thesis: ${digest.oneLineSummary || "—"}`,
+  );
+  if (digest.recommendation || digest.targetPrice) {
+    const rec = digest.recommendation ?? "—";
+    const tgt = digest.targetPrice ? ` · target ${digest.targetPrice}` : "";
+    lines.push(`Original recommendation: ${rec}${tgt}`);
+  }
+  if (digest.valuation.method || digest.valuation.targetMultiple) {
+    const method = digest.valuation.method ?? "—";
+    const multiple = digest.valuation.targetMultiple ?? "—";
+    const eps = digest.valuation.impliedEPS
+      ? ` · EPS basis ${digest.valuation.impliedEPS}`
+      : "";
+    lines.push(`Original valuation framework: ${method} / ${multiple}${eps}`);
+  }
+  if (digest.thesisPillars.length > 0) {
+    lines.push("Top thesis pillars (must_check first):");
+    for (const p of digest.thesisPillars.slice(0, 5)) {
+      lines.push(`- [${p.researchPriority}] ${truncate(p.label, 140)}`);
+    }
+  }
+  if (digest.flaggedDetails.length > 0) {
+    lines.push("Memo-flagged details:");
+    for (const f of digest.flaggedDetails.slice(0, 5)) {
+      lines.push(
+        `- [${f.category} · ${f.importance}] ${truncate(f.label, 100)} — ${truncate(f.whyItMatters, 180)}`,
+      );
+    }
+  }
+  if (
+    FINANCIALS_SECTIONS.has(sectionId) &&
+    digest.financialClaims.length > 0
+  ) {
+    lines.push("Financial claims the memo anchored on (relevant to this section):");
+    for (const c of digest.financialClaims.slice(0, 4)) {
+      const period = c.period ? ` (${c.period})` : "";
+      lines.push(
+        `- ${c.metric} = ${c.value}${period} [${c.claimType}] — ${truncate(c.whyItMatters, 160)}`,
+      );
+    }
+  }
+  if (MEMO_HELD_BROKE_SECTIONS.has(sectionId)) {
+    lines.push(
+      "Use these anchors to evaluate whether the memo still holds — do NOT drift into generic company commentary. Tie each section claim back to a specific pillar / flag / claim above.",
+    );
+  }
+  lines.push("");
 }

@@ -26,6 +26,7 @@ import { PeriodPanel } from "../components/PeriodPanel";
 import { ResearchFindingsCard } from "../components/ResearchFindingsCard";
 import { MemoReview } from "../components/MemoReview";
 import { MemoMissionTracker } from "../components/MemoMissionTracker";
+import { MemoUnderstandingCard } from "../components/MemoUnderstandingCard";
 import { ReadinessStrip } from "../components/ReadinessStrip";
 import { MemoCompletionBanner } from "../components/MemoCompletionBanner";
 import { deriveMissionTrackerSteps } from "../lib/missionTrackerState";
@@ -42,6 +43,8 @@ export function WorkspacePage() {
     retryFailedSection,
     retryFullMemo,
     startOver,
+    rerunMemoUnderstanding,
+    skipMemoUnderstanding,
   } = useMemoProject();
 
   const status = state.llmProviderStatus;
@@ -142,6 +145,20 @@ export function WorkspacePage() {
       {/* Step 2 — Detected period */}
       {dnaReady && <PeriodPanel />}
 
+      {/* Phase 6A: Memo Intelligence Snapshot. Sits between Step 2
+          (Detected period) and Step 3 (Research) so the user can verify
+          the AI understood the memo before research kicks off. */}
+      {dnaReady && (
+        <MemoUnderstandingCard
+          state={state.understanding}
+          providerNotReady={!llmReady || !researchAvailable}
+          gateBlocking={gateBlocking}
+          onRerun={() => void rerunMemoUnderstanding()}
+          onEmergencySkip={skipMemoUnderstanding}
+          skipUnderstanding={state.skipUnderstanding}
+        />
+      )}
+
       {/* Step 3 — Research */}
       {dnaReady && (
         <Panel
@@ -186,9 +203,25 @@ export function WorkspacePage() {
             />
           ) : (
             <div className="mt-4 flex flex-col gap-3">
+              {/* Phase 6A: gate the Research button on memo understanding.
+                  Memo-specific research is the requirement; generic research
+                  is hidden behind the developer escape hatch in
+                  MemoUnderstandingCard. */}
+              {state.understanding.kind !== "success" && !state.skipUnderstanding && (
+                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5 text-[11.5px] text-[var(--color-text-muted)] leading-snug">
+                  {state.understanding.kind === "loading"
+                    ? "Memo analysis in progress. Research will use the extracted memo understanding."
+                    : state.understanding.kind === "error"
+                      ? "Memo analysis failed. Rerun memo analysis above so research stays memo-specific."
+                      : "Memo analysis hasn't run yet."}
+                </div>
+              )}
               <Button
                 onClick={() => void runResearch()}
-                disabled={researchLoading}
+                disabled={
+                  researchLoading ||
+                  (state.understanding.kind !== "success" && !state.skipUnderstanding)
+                }
                 leadingIcon={
                   researchLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

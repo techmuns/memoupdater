@@ -1,4 +1,6 @@
 import type {
+  MemoUnderstandingDigest,
+  MemoUnderstandingResearchTask,
   ResearchPassCompanyAliases,
   ResearchPassId,
   ResearchPassRequest,
@@ -201,6 +203,24 @@ function buildUserPrompt(req: ResearchPassRequest): string {
     }
   }
 
+  // Phase 6A: memo-specific anchor for this pass. Rendered only when the
+  // request carries both a MemoUnderstanding digest AND a non-empty list
+  // of pass-specific research tasks (selected client-side via
+  // selectTasksForPass). When this block is present, research findings
+  // MUST tie back to memo-specific questions instead of generic company
+  // coverage.
+  if (
+    req.memoUnderstandingDigest &&
+    req.passMemoTasks &&
+    req.passMemoTasks.length > 0
+  ) {
+    appendMemoSpecificBlock(
+      lines,
+      req.memoUnderstandingDigest,
+      req.passMemoTasks,
+    );
+  }
+
   lines.push("");
   lines.push("# 5. Output requirements");
   lines.push(
@@ -226,6 +246,58 @@ function buildUserPrompt(req: ResearchPassRequest): string {
   );
 
   return lines.join("\n");
+}
+
+function appendMemoSpecificBlock(
+  lines: string[],
+  digest: MemoUnderstandingDigest,
+  tasks: MemoUnderstandingResearchTask[],
+): void {
+  lines.push("");
+  lines.push("# Memo-specific anchor for this pass");
+  lines.push(
+    `The user's original memo specifically believed: ${digest.oneLineSummary}`,
+  );
+  if (digest.recommendation) {
+    const target = digest.targetPrice ? ` · target ${digest.targetPrice}` : "";
+    lines.push(`Original recommendation: ${digest.recommendation}${target}`);
+  }
+  if (digest.valuation.method || digest.valuation.targetMultiple) {
+    const method = digest.valuation.method ?? "—";
+    const multiple = digest.valuation.targetMultiple ?? "—";
+    const eps = digest.valuation.impliedEPS
+      ? ` · EPS basis ${digest.valuation.impliedEPS}`
+      : "";
+    lines.push(`Original valuation anchor: ${method} / ${multiple}${eps}`);
+  }
+  if (digest.thesisPillars.length > 0) {
+    lines.push("Thesis pillars this pass should check:");
+    for (const p of digest.thesisPillars) {
+      lines.push(`- [${p.researchPriority}] ${p.label}`);
+    }
+  }
+  if (digest.flaggedDetails.length > 0) {
+    lines.push("Flagged details this pass should specifically update:");
+    for (const f of digest.flaggedDetails) {
+      lines.push(
+        `- [${f.category} · ${f.importance}] ${f.label} — ${f.whyItMatters}`,
+      );
+    }
+  }
+  lines.push("Research questions this pass must answer:");
+  for (const t of tasks) {
+    lines.push(`- ${t.question}  (anchored on: ${t.memoAnchor})`);
+  }
+  lines.push("For each finding you emit:");
+  lines.push(
+    "- set `thesisCheckpointId` when applicable (existing rule);",
+  );
+  lines.push(
+    "- set `linkedFlagId` to the flagged-detail id if the finding directly updates that flag;",
+  );
+  lines.push(
+    "- set `linkedResearchTaskId` to the task id if the finding answers a queued question.",
+  );
 }
 
 function formatAliases(aliases: ResearchPassCompanyAliases): string[] {

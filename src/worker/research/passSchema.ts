@@ -58,6 +58,8 @@ export const RESEARCH_PASS_OPENAI_SCHEMA: object = {
           "relevance",
           "sources",
           "thesisCheckpointId",
+          "linkedFlagId",
+          "linkedResearchTaskId",
         ],
         properties: {
           id: { type: "string" },
@@ -67,6 +69,11 @@ export const RESEARCH_PASS_OPENAI_SCHEMA: object = {
           impact: { type: "string", enum: IMPACT_VALUES },
           relevance: { type: "string" },
           thesisCheckpointId: { type: ["string", "null"] },
+          // Phase 6A: optional links back to MemoUnderstanding ids — set
+          // by the model when the finding directly updates a flagged
+          // detail or answers a queued research task.
+          linkedFlagId: { type: ["string", "null"] },
+          linkedResearchTaskId: { type: ["string", "null"] },
           sources: {
             type: "array",
             items: {
@@ -104,6 +111,8 @@ function normalizeFinding(input: unknown): unknown {
   if (!isPlainObject(input)) return input;
   const copy: Record<string, unknown> = { ...input };
   if (copy.thesisCheckpointId === null) delete copy.thesisCheckpointId;
+  if (copy.linkedFlagId === null) delete copy.linkedFlagId;
+  if (copy.linkedResearchTaskId === null) delete copy.linkedResearchTaskId;
   const sources = copy.sources;
   if (Array.isArray(sources)) {
     copy.sources = sources.map((s) => normalizeSource(s));

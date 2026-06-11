@@ -7,6 +7,7 @@ import type {
   MemoDNA,
   MemoSection,
   MemoSectionDigestEntry,
+  MemoUnderstandingDigest,
   ResearchDetectionInput,
   ResearchFinding,
   ResearchFindingCategory,
@@ -312,6 +313,10 @@ export interface RunSectionGenerationArgs {
   detection?: ResearchDetectionInput;
   research: ResearchFindings | null;
   initialMemoId?: string;
+  // Phase 6A: optional MemoUnderstanding digest. When present, each
+  // section request carries it and the section prompt adds the
+  // memo-anchored "Original memo's anchor" block.
+  memoUnderstandingDigest?: MemoUnderstandingDigest;
   apiCall: (
     req: GenerateMemoSectionRequest,
     signal?: AbortSignal,
@@ -508,6 +513,7 @@ function buildSectionRequest(
       selection.watchIds.length > 0 ? selection.watchIds : undefined,
     styleSample: styleSample.length > 0 ? styleSample : undefined,
     initialMemoId: args.initialMemoId,
+    memoUnderstandingDigest: args.memoUnderstandingDigest,
     retryCompact: retryCompact ? true : undefined,
   };
   if (sectionId === "sec_final_action") {

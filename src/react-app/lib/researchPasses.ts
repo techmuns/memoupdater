@@ -17,6 +17,7 @@ import type {
   SourceTier,
   ThesisCheckpoint,
 } from "@shared/types";
+import { selectTasksForPass } from "./memoUnderstandingSummary";
 
 export const RESEARCH_PASS_IDS: readonly ResearchPassId[] = [
   "official_results",
@@ -466,10 +467,16 @@ export async function runResearchPasses(
       return { outcome: "aborted", perPass };
     }
 
+    const digest = args.baseRequest.memoUnderstandingDigest;
+    const passMemoTasks = digest
+      ? selectTasksForPass(digest, passId)
+      : undefined;
     const request: ResearchPassRequest = {
       ...args.baseRequest,
       passId,
       thesisCheckpoints: args.thesisCheckpoints,
+      passMemoTasks:
+        passMemoTasks && passMemoTasks.length > 0 ? passMemoTasks : undefined,
     };
 
     args.onPassStart(passId, 1);
