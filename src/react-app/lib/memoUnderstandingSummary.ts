@@ -81,8 +81,9 @@ export function topFlagged(
   return primary.slice(0, n);
 }
 
-const DIGEST_MAX_FLAGS = 6;
-const DIGEST_MAX_PILLARS = 6;
+// Phase 6A.1: digest caps aligned with compact-first schema (schema.ts).
+const DIGEST_MAX_FLAGS = 5;
+const DIGEST_MAX_PILLARS = 5;
 const DIGEST_MAX_CLAIMS = 6;
 const DIGEST_MAX_TASKS = 8;
 

@@ -57,9 +57,17 @@ const SOURCE_PRIORITY: MemoUnderstandingSourcePriority[] = [
 ];
 
 const NULLABLE_STR = { type: ["string", "null"] };
+// Phase 6A.1: compact-first reliability — every free-text list is capped
+// at 4 items by default. Specific lists override (mustAnswerQuestions: 6).
 const NULLABLE_STR_ARRAY = {
   type: "array",
   items: { type: "string" },
+  maxItems: 4,
+};
+const NULLABLE_STR_ARRAY_6 = {
+  type: "array",
+  items: { type: "string" },
+  maxItems: 6,
 };
 
 export const MEMO_UNDERSTANDING_OPENAI_SCHEMA: object = {
@@ -148,6 +156,7 @@ export const MEMO_UNDERSTANDING_OPENAI_SCHEMA: object = {
     },
     flaggedDetails: {
       type: "array",
+      maxItems: 5,
       items: {
         type: "object",
         additionalProperties: false,
@@ -182,6 +191,7 @@ export const MEMO_UNDERSTANDING_OPENAI_SCHEMA: object = {
         detailedThesis: { type: "string" },
         thesisPillars: {
           type: "array",
+          maxItems: 5,
           items: {
             type: "object",
             additionalProperties: false,
@@ -214,6 +224,7 @@ export const MEMO_UNDERSTANDING_OPENAI_SCHEMA: object = {
       properties: {
         keyClaims: {
           type: "array",
+          maxItems: 6,
           items: {
             type: "object",
             additionalProperties: false,
@@ -241,6 +252,7 @@ export const MEMO_UNDERSTANDING_OPENAI_SCHEMA: object = {
         },
         segmentClaims: {
           type: "array",
+          maxItems: 4,
           items: {
             type: "object",
             additionalProperties: false,
@@ -307,13 +319,15 @@ export const MEMO_UNDERSTANDING_OPENAI_SCHEMA: object = {
       additionalProperties: false,
       required: ["mustAnswerQuestions", "sourcePriorities", "researchTasks"],
       properties: {
-        mustAnswerQuestions: NULLABLE_STR_ARRAY,
+        mustAnswerQuestions: NULLABLE_STR_ARRAY_6,
         sourcePriorities: {
           type: "array",
+          maxItems: 5,
           items: { type: "string", enum: SOURCE_PRIORITY },
         },
         researchTasks: {
           type: "array",
+          maxItems: 8,
           items: {
             type: "object",
             additionalProperties: false,
@@ -339,6 +353,7 @@ export const MEMO_UNDERSTANDING_OPENAI_SCHEMA: object = {
               linkedFinancialClaimIds: NULLABLE_STR_ARRAY,
               preferredSources: {
                 type: "array",
+                maxItems: 4,
                 items: { type: "string", enum: SOURCE_PRIORITY },
               },
               expectedEvidence: { type: "string" },

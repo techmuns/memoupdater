@@ -37,8 +37,8 @@ import { parseUnderstandJson } from "./parse";
 import { trimForUnderstanding } from "./trim";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
-const UNDERSTAND_MAX_OUTPUT_TOKENS = 4_000;
-const UNDERSTAND_REPAIR_MAX_OUTPUT_TOKENS = 2_500;
+const UNDERSTAND_MAX_OUTPUT_TOKENS = 2_400;
+const UNDERSTAND_REPAIR_MAX_OUTPUT_TOKENS = 1_600;
 const GATE_HEADER = "x-memo-llm-gate";
 
 export async function handleMemoUnderstand(

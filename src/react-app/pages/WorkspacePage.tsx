@@ -212,7 +212,9 @@ export function WorkspacePage() {
                   {state.understanding.kind === "loading"
                     ? "Memo analysis in progress. Research will use the extracted memo understanding."
                     : state.understanding.kind === "error"
-                      ? "Memo analysis failed. Rerun memo analysis above so research stays memo-specific."
+                      ? state.understanding.code === "timeout"
+                        ? "Memo analysis timed out. Rerun compact memo analysis above so research stays memo-specific."
+                        : "Memo analysis failed. Rerun memo analysis above so research stays memo-specific."
                       : "Memo analysis hasn't run yet."}
                 </div>
               )}

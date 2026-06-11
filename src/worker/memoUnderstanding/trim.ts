@@ -15,8 +15,8 @@ import { trimToCharBudget } from "../llm/trim";
 //   6. NEVER fabricate content; joiners only — every preserved range is a
 //      verbatim slice of the input.
 
-export const UNDERSTAND_INPUT_CHAR_CAP = 32_000;
-const HEAD_BUDGET = 2_000;
+export const UNDERSTAND_INPUT_CHAR_CAP = 18_000;
+const HEAD_BUDGET = 1_500;
 const SECTION_JOINER = "\n\n[... section omitted for length ...]\n\n";
 
 // Section-priority tiers (higher index in earlier arrays = win first).

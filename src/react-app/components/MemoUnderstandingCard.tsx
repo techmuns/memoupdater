@@ -126,14 +126,28 @@ export function MemoUnderstandingCard({
   }
 
   if (state.kind === "error") {
+    // Phase 6A.1: timeout gets specific copy + a "Rerun compact memo
+    // analysis" button label so the user understands the retry is the
+    // compact-first path (not a different mode).
+    const isTimeout = state.code === "timeout";
+    const headline = isTimeout
+      ? "Memo analysis timed out. Try compact rerun."
+      : "We couldn't extract a structured understanding of this memo.";
+    const subtitle = isTimeout
+      ? "We couldn't finish the memo analysis in time. Rerun keeps it compact and is usually faster."
+      : null;
+    const rerunLabel = isTimeout ? "Rerun compact memo analysis" : "Rerun memo analysis";
     return (
       <Frame title="Memo intelligence · Understanding failed">
         <div className="flex items-start gap-2 text-[12.5px] text-[var(--color-warning)] leading-snug">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
           <div>
-            <div className="font-semibold">
-              We couldn't extract a structured understanding of this memo.
-            </div>
+            <div className="font-semibold">{headline}</div>
+            {subtitle && (
+              <div className="text-[11.5px] text-[var(--color-text-muted)] mt-0.5 leading-snug">
+                {subtitle}
+              </div>
+            )}
             <div className="text-[11px] text-[var(--color-text-muted)] font-mono mt-0.5">
               {state.code} · {state.message}
             </div>
@@ -145,7 +159,7 @@ export function MemoUnderstandingCard({
             onClick={onRerun}
             leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}
           >
-            Rerun memo analysis
+            {rerunLabel}
           </Button>
           {(providerNotReady || gateBlocking) && (
             <Link

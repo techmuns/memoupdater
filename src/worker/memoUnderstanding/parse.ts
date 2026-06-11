@@ -18,11 +18,16 @@ import type {
 // bounds — the model still occasionally overshoots) and validates id
 // uniqueness.
 
-const MAX_FLAGS = 12;
-const MAX_PILLARS = 8;
-const MAX_KEY_CLAIMS = 12;
-const MAX_SEGMENT_CLAIMS = 8;
-const MAX_TASKS = 12;
+// Phase 6A.1: compact-first reliability caps. Mirrors `maxItems` in
+// schema.ts so the parser still enforces the bound even if the model
+// returns extras.
+const MAX_FLAGS = 5;
+const MAX_PILLARS = 5;
+const MAX_KEY_CLAIMS = 6;
+const MAX_SEGMENT_CLAIMS = 4;
+const MAX_TASKS = 8;
+const MAX_LIST = 4;
+const MAX_MUST_ANSWER = 6;
 
 const FLAG_CATEGORIES = new Set<string>([
   "valuation_anchor",
@@ -165,8 +170,8 @@ function parseSummary(input: unknown): ParseResult<MemoUnderstanding["summary"]>
     oneLineSummary: str(input.oneLineSummary) ?? "",
     shortSummary: str(input.shortSummary) ?? "",
     originalThesis: str(input.originalThesis) ?? "",
-    whatTheMemoNeedsToBeRight: strArr(input.whatTheMemoNeedsToBeRight),
-    whatWouldChangeTheView: strArr(input.whatWouldChangeTheView),
+    whatTheMemoNeedsToBeRight: strArr(input.whatTheMemoNeedsToBeRight, MAX_LIST),
+    whatWouldChangeTheView: strArr(input.whatWouldChangeTheView, MAX_LIST),
   });
 }
 
@@ -336,8 +341,8 @@ function parseValuation(
     impliedEPS: optStr(input.impliedEPS),
     targetPrice: optStr(input.targetPrice),
     upside: optStr(input.upside),
-    keyValuationAssumptions: strArr(input.keyValuationAssumptions),
-    valuationQuestionsToUpdate: strArr(input.valuationQuestionsToUpdate),
+    keyValuationAssumptions: strArr(input.keyValuationAssumptions, MAX_LIST),
+    valuationQuestionsToUpdate: strArr(input.valuationQuestionsToUpdate, MAX_LIST),
   });
 }
 
@@ -346,9 +351,9 @@ function parseRisksAndCatalysts(
 ): ParseResult<MemoUnderstanding["risksAndCatalysts"]> {
   if (!isPlainObject(input)) return fail("risksAndCatalysts missing");
   return ok({
-    catalysts: strArr(input.catalysts),
-    risks: strArr(input.risks),
-    watchItems: strArr(input.watchItems),
+    catalysts: strArr(input.catalysts, MAX_LIST),
+    risks: strArr(input.risks, MAX_LIST),
+    watchItems: strArr(input.watchItems, MAX_LIST),
   });
 }
 
@@ -395,7 +400,7 @@ function parseResearchPlan(
     });
   }
   return ok({
-    mustAnswerQuestions: strArr(input.mustAnswerQuestions),
+    mustAnswerQuestions: strArr(input.mustAnswerQuestions, MAX_MUST_ANSWER),
     sourcePriorities: enumStrArr(input.sourcePriorities, SOURCE_PRIORITIES) as
       MemoUnderstandingSourcePriority[],
     researchTasks: tasks,
@@ -409,8 +414,8 @@ function parseConfidence(
   const extractionConfidence = enumStr(input.extractionConfidence, IMPORTANCES_3);
   return ok({
     extractionConfidence: (extractionConfidence as "high" | "medium" | "low") ?? "low",
-    missingFromMemo: strArr(input.missingFromMemo),
-    ambiguousItems: strArr(input.ambiguousItems),
+    missingFromMemo: strArr(input.missingFromMemo, MAX_LIST),
+    ambiguousItems: strArr(input.ambiguousItems, MAX_LIST),
   });
 }
 
@@ -426,10 +431,11 @@ function optStr(v: unknown): string | undefined {
   return str(v);
 }
 
-function strArr(v: unknown): string[] {
+function strArr(v: unknown, max?: number): string[] {
   if (!Array.isArray(v)) return [];
   const out: string[] = [];
   for (const x of v) {
+    if (max !== undefined && out.length >= max) break;
     const s = str(x);
     if (s) out.push(s);
   }
