@@ -470,6 +470,14 @@ function FlagRow({ flag }: { flag: MemoUnderstandingFlaggedDetail }) {
       : flag.importance === "high"
         ? "accent"
         : "neutral";
+  // Phase 6D: surface the SPECIFIC memo excerpt (flag.detail) as the
+  // visible description. flag.detail is a verbatim sentence from the
+  // memo (or the baseline's reconstructed excerpt), so each row reads
+  // distinctly even when several flags share a category. whyItMatters
+  // remains available as a subtler caption when present and distinct.
+  const detail = (flag.detail || flag.memoEvidence || "").trim();
+  const why = (flag.whyItMatters || "").trim();
+  const showWhy = why && !detail.toLowerCase().includes(why.slice(0, 40).toLowerCase());
   return (
     <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
       <div className="flex items-start gap-2">
@@ -484,9 +492,22 @@ function FlagRow({ flag }: { flag: MemoUnderstandingFlaggedDetail }) {
           <div className="text-[10px] uppercase tracking-[0.06em] text-[var(--color-text-subtle)] mt-0.5">
             {CATEGORY_LABEL[flag.category]}
           </div>
-          <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1 leading-snug">
-            {flag.whyItMatters}
-          </p>
+          {detail && (
+            <p
+              className="text-[12px] text-[var(--color-text)] mt-1 leading-snug"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              <span className="text-[var(--color-text-subtle)]">
+                From the memo:
+              </span>{" "}
+              {detail}
+            </p>
+          )}
+          {showWhy && (
+            <p className="text-[11px] text-[var(--color-text-muted)] mt-1.5 leading-snug">
+              {why}
+            </p>
+          )}
         </div>
       </div>
     </div>

@@ -472,14 +472,22 @@ export function buildBaselineMemoUnderstanding(
   }
 
   // ---- Flags ----
+  // Phase 6D: round-robin across categories so a single dominant category
+  // (e.g. valuation_anchor) cannot grab every flag slot with near-identical
+  // sentences. Pass 1 takes the TOP sentence from each category in
+  // CATEGORY_ORDER. Pass 2 fills any remaining slots with the next-best
+  // sentence from each category. Within a category, isDuplicate already
+  // prevents near-matches.
   const flags: MemoUnderstandingFlaggedDetail[] = [];
   const usedSentenceStarts = new Set<number>();
   let flagSeq = 1;
-  for (const cat of CATEGORY_ORDER) {
-    if (flags.length >= MAX_FLAGS) break;
-    const list = byCategory.get(cat) ?? [];
-    for (const s of list) {
-      if (flags.length >= MAX_FLAGS) break;
+  const PER_CAT_BUDGET = 2;
+  outer: for (let depth = 0; depth < PER_CAT_BUDGET; depth++) {
+    for (const cat of CATEGORY_ORDER) {
+      if (flags.length >= MAX_FLAGS) break outer;
+      const list = byCategory.get(cat) ?? [];
+      const s = list[depth];
+      if (!s) continue;
       if (usedSentenceStarts.has(s.start)) continue;
       const id = `bfd${String(flagSeq).padStart(2, "0")}`;
       flagSeq += 1;
@@ -490,7 +498,7 @@ export function buildBaselineMemoUnderstanding(
         detail: truncate(s.text, 200),
         category: cat,
         importance: CAT_TO_IMPORTANCE[cat],
-        whyItMatters: CAT_WHY[cat],
+        whyItMatters: makeWhyItMatters(cat, s.text),
         memoEvidence: truncate(s.text, 200),
         researchQuestion: CAT_QUESTION_TEMPLATE[cat](label),
       });
@@ -741,39 +749,134 @@ export function buildBaselineMemoUnderstanding(
 // ---- Pure helpers ----
 
 function makeLabel(cat: CategoryKey, text: string): string {
-  // Lift a short label from the sentence; prefer the matching keyword
-  // window for valuation_anchor / segment_driver.
+  // Phase 6D: ALWAYS produce a specific label. The category prefix is
+  // kept for visual grouping, but the suffix must be a distinguishing
+  // phrase lifted from the sentence so two flags in the same category
+  // never render identically.
+  const prefix = CATEGORY_PREFIX[cat];
+  const suffix = labelSuffix(cat, text);
+  if (suffix) return `${prefix} — ${suffix}`;
+  // Last-resort fallback: lift the first noun-phrase-looking chunk of
+  // the sentence so the row is still distinctive.
+  const head = liftHead(text, 60);
+  return head ? `${prefix} — ${head}` : prefix;
+}
+
+const CATEGORY_PREFIX: Record<CategoryKey, string> = {
+  valuation_anchor: "Valuation anchor",
+  earnings_quality: "Earnings quality",
+  segment_driver: "Segment driver",
+  margin_driver: "Margin driver",
+  financial_claim: "Financial claim",
+  management_claim: "Management claim",
+  catalyst: "Catalyst",
+  risk: "Risk",
+  must_verify: "Must verify",
+  source_gap: "Source gap",
+  contradiction: "Contradiction",
+};
+
+// Try category-specific patterns to lift a distinguishing phrase from
+// the sentence. Returns undefined when nothing strong matches — the
+// caller will fall back to liftHead().
+function labelSuffix(cat: CategoryKey, text: string): string | undefined {
   switch (cat) {
     case "valuation_anchor": {
-      const m = text.match(/(\d+(?:\.\d+)?x\s+\w+['']?\d{2}[EF]?\s+EPS)/i);
-      if (m) return `Valuation anchor — ${m[1]}`;
-      const tp = text.match(/(target price[^,.]*)/i);
-      if (tp) return `Valuation anchor — ${truncate(tp[1], 100)}`;
-      return "Valuation anchor";
+      const m =
+        text.match(/(\d+(?:\.\d+)?x\s+\w+['']?\d{2}[EF]?\s+EPS)/i) ||
+        text.match(/(\d+(?:\.\d+)?x\s+(?:P\/?E|EV\/EBITDA))/i) ||
+        text.match(/((?:P\/?E|EV\/EBITDA|P\/B)\s*(?:of|multiple)?\s*\d+(?:\.\d+)?x?)/i);
+      if (m) return truncate(m[1], 100);
+      const tp = text.match(/target price[^,.;]*/i);
+      if (tp) return truncate(tp[0], 100);
+      const pt = text.match(/price target[^,.;]*/i);
+      if (pt) return truncate(pt[0], 100);
+      const upside = text.match(/upside[^,.;]*/i);
+      if (upside) return truncate(upside[0], 100);
+      if (/\bDCF\b/i.test(text)) return "DCF anchor";
+      if (/\bSOTP\b/i.test(text)) return "SOTP anchor";
+      return undefined;
     }
-    case "earnings_quality":
-      return "Earnings quality";
+    case "earnings_quality": {
+      const m =
+        text.match(/(other income[^,.;]{0,80})/i) ||
+        text.match(/(fair value[^,.;]{0,80})/i) ||
+        text.match(/(one[- ]off[^,.;]{0,80})/i) ||
+        text.match(/(non[- ]recurring[^,.;]{0,80})/i) ||
+        text.match(/(exceptional[^,.;]{0,80})/i) ||
+        text.match(/(below[- ]the[- ]line[^,.;]{0,80})/i) ||
+        text.match(/(core EBITDA[^,.;]{0,80})/i);
+      return m ? truncate(m[1], 100) : undefined;
+    }
     case "segment_driver": {
-      const m = text.match(/\b(C&W|Lloyd|ECD|RAC|cables|wires|switchgear|lighting)\b/i);
-      return m ? `Segment driver — ${m[1]}` : "Segment driver";
+      const segMatch = text.match(
+        /\b(C&W|Lloyd|ECD|RAC|cables|wires|switchgear|lighting)\b[^,.;]{0,80}/i,
+      );
+      if (segMatch) return truncate(segMatch[0], 100);
+      const generic = text.match(/(segment[^,.;]{0,80})/i);
+      return generic ? truncate(generic[1], 100) : undefined;
     }
-    case "margin_driver":
-      return "Margin driver";
-    case "financial_claim":
-      return "Financial claim";
-    case "management_claim":
-      return "Management claim";
-    case "catalyst":
-      return "Catalyst";
-    case "risk":
-      return "Risk";
-    case "must_verify":
-      return "Must verify";
+    case "margin_driver": {
+      const m =
+        text.match(/((?:EBITDA|EBIT|gross|operating) margin[^,.;]{0,80})/i) ||
+        text.match(/(margin (?:compression|expansion)[^,.;]{0,80})/i);
+      return m ? truncate(m[1], 100) : undefined;
+    }
+    case "financial_claim": {
+      const m =
+        text.match(/((?:revenue|sales|EBITDA|EBIT|PAT|EPS)[^,.;]{0,80})/i);
+      return m ? truncate(m[1], 100) : undefined;
+    }
+    case "management_claim": {
+      const m =
+        text.match(/((?:guidance|guided|commentary|management said|management stated)[^,.;]{0,80})/i);
+      return m ? truncate(m[1], 100) : undefined;
+    }
+    case "catalyst": {
+      const m =
+        text.match(/((?:catalyst|re[- ]rating|trigger|capacity|expansion)[^,.;]{0,80})/i);
+      return m ? truncate(m[1], 100) : undefined;
+    }
+    case "risk": {
+      const m =
+        text.match(/((?:risk|slowdown|inventory|channel|pricing|input cost|headwind|regulatory)[^,.;]{0,80})/i);
+      return m ? truncate(m[1], 100) : undefined;
+    }
+    case "must_verify": {
+      const m =
+        text.match(/((?:assume|assumption|forecast|estimate|expect)[^,.;]{0,80})/i);
+      return m ? truncate(m[1], 100) : undefined;
+    }
     case "source_gap":
-      return "Source gap";
     case "contradiction":
-      return "Contradiction";
+      return undefined;
   }
+}
+
+// Lift a short head phrase from the sentence — used as the absolute
+// last-resort label suffix so two flags in the same category still
+// render distinctly.
+function liftHead(text: string, max: number): string {
+  if (!text) return "";
+  // Take the first clause (up to the first comma/semicolon/dash) then
+  // truncate.
+  const firstClause = text.split(/[,;—–]/)[0] ?? text;
+  const cleaned = firstClause.trim().replace(/\s+/g, " ");
+  return truncate(cleaned, max);
+}
+
+// Phase 6D: make the visible "why it matters" mention the specific
+// excerpt from the sentence, rather than repeating a static
+// category-level reason word-for-word across multiple flags in the
+// same category. The category-level reason stays as the prefix so the
+// framing remains consistent.
+function makeWhyItMatters(cat: CategoryKey, text: string): string {
+  const generic = CAT_WHY[cat];
+  const specific = labelSuffix(cat, text) || liftHead(text, 80);
+  if (!specific) return generic;
+  // Prepend the specific anchor in italics-style framing (rendered as
+  // plain text in the UI). The generic clause provides the rationale.
+  return `Specifically: "${specific}". ${generic}`;
 }
 
 function mapSentenceHeads(sentences: Sentence[], cap: number): string[] {

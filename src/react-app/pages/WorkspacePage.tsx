@@ -38,6 +38,15 @@ import {
 } from "../lib/memoUnderstandingSummary";
 import { useMemoProject } from "../state/MemoProjectContext";
 
+// Phase 6D: anchors that match these bare category names alone are too
+// generic to print as "Validating: X". When this matches, the
+// per-pass task list falls back to the research question text instead.
+const GENERIC_ANCHOR_RE =
+  /^(valuation anchor|earnings quality|segment driver|margin driver|financial claim|management claim|catalyst|risk|must verify|source gap|contradiction)$/i;
+function isGenericAnchor(anchor: string): boolean {
+  return GENERIC_ANCHOR_RE.test(anchor.trim());
+}
+
 export function WorkspacePage() {
   const {
     state,
@@ -82,11 +91,14 @@ export function WorkspacePage() {
     return undefined;
   }, [state.research]);
 
-  // Phase 6C: per-pass memo-anchored task list. Used by the research
+  // Phase 6C/6D: per-pass memo-anchored task list. Used by the research
   // progress UI to show the SPECIFIC items being validated under each
   // pass, instead of just generic pass titles. We also fold user-supplied
   // priorities (rendered as plain bullets per pass — every pass sees them,
   // matching how the worker prompt block works).
+  // Phase 6D: if the memoAnchor is a bare category name (the baseline
+  // tier can emit "Valuation anchor" with no specific suffix), prefer
+  // the research question text so the visible line is distinct.
   const tasksByPass = useMemo<Record<ResearchPassId, string[]>>(() => {
     const empty: Record<ResearchPassId, string[]> = {
       official_results: [],
@@ -100,10 +112,23 @@ export function WorkspacePage() {
     const digest = buildMemoUnderstandingDigest(state.understanding.understanding);
     const out = empty;
     (Object.keys(out) as ResearchPassId[]).forEach((passId) => {
-      const tasks = selectTasksForPass(digest, passId).map((t) =>
-        (t.memoAnchor || t.question).slice(0, 120),
-      );
-      out[passId] = tasks.slice(0, 4);
+      const rawTasks = selectTasksForPass(digest, passId);
+      const seen = new Set<string>();
+      const lines: string[] = [];
+      for (const t of rawTasks) {
+        const anchor = (t.memoAnchor || "").trim();
+        const isGeneric = isGenericAnchor(anchor);
+        const candidate = ((isGeneric ? t.question : anchor) || t.question)
+          .trim()
+          .slice(0, 140);
+        if (!candidate) continue;
+        const dedupeKey = candidate.toLowerCase().slice(0, 60);
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        lines.push(candidate);
+        if (lines.length >= 4) break;
+      }
+      out[passId] = lines;
     });
     return out;
   }, [state.understanding]);
