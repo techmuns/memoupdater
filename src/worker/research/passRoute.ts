@@ -44,6 +44,16 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 // effective JSON budget was even smaller. These are ceilings, not spend.
 const PASS_MAX_OUTPUT_TOKENS = 6_000;
 const PASS_COMPACT_MAX_OUTPUT_TOKENS = 3_500;
+// Phase 6G.2: research passes invoke the web_search tool, which makes
+// real network round-trips BEFORE the model can emit JSON. On the
+// heaviest pass (official_results: results + shareholding-pattern, two
+// distinct searches) the default 60s OpenAI ceiling timed out. Kept
+// under ~100s because Cloudflare's edge can drop an eyeball connection
+// that stays open longer (HTTP 524). The primary and the compact retry
+// are SEPARATE browser→worker requests (the orchestrator re-POSTs on
+// timeout), so each is independently bounded — they don't stack.
+const PASS_TIMEOUT_MS = 92_000;
+const PASS_COMPACT_TIMEOUT_MS = 85_000;
 const GATE_HEADER = "x-memo-llm-gate";
 
 // Attach reasoning effort only on model families that accept the
@@ -173,6 +183,9 @@ export async function handleResearchPass(
     const maxTokens = validation.value.retryCompact
       ? PASS_COMPACT_MAX_OUTPUT_TOKENS
       : PASS_MAX_OUTPUT_TOKENS;
+    const timeoutMs = validation.value.retryCompact
+      ? PASS_COMPACT_TIMEOUT_MS
+      : PASS_TIMEOUT_MS;
 
     console.log(
       JSON.stringify({
@@ -197,6 +210,7 @@ export async function handleResearchPass(
       toolChoice: WEB_SEARCH_TOOL_CHOICE,
       include: [...PASS_INCLUDE],
       maxTokens,
+      timeoutMs,
       reasoningEffort: reasoningEffortForModel(readiness.model),
       abortSignal: c.req.raw.signal,
       logEventTag: "llm_research_pass",

@@ -9,7 +9,11 @@ import { FOLLOW_UP_MEMO_OPENAI_SCHEMA } from "./parse";
 
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const MEMO_FORMAT_NAME = "follow_up_memo";
-const TIMEOUT_MS = 60_000;
+// Default per-call ceiling. Pure extraction / section calls keep this.
+// Web-search research passes pass a higher value (see passRoute.ts) —
+// the search round-trips legitimately take longer than a one-shot
+// completion, and a 60s ceiling timed out the heaviest pass.
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 interface OpenAIAnnotation {
   type: string;
@@ -65,6 +69,9 @@ export interface CallOpenAIResponsesArgs {
   // should pass "low". Only attached to the request body when set —
   // non-reasoning models reject the param.
   reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  // Per-call timeout override (ms). Defaults to DEFAULT_TIMEOUT_MS (60s).
+  // Web-search research passes raise this; extraction calls keep default.
+  timeoutMs?: number;
   abortSignal?: AbortSignal;
   logEventTag?: string;
 }
@@ -99,7 +106,12 @@ export type CallOpenAIResponsesResult =
 export async function callOpenAIResponses(
   args: CallOpenAIResponsesArgs,
 ): Promise<CallOpenAIResponsesResult> {
-  const { signal, clear } = combineWithTimeout(args.abortSignal, TIMEOUT_MS);
+  const { signal, clear } = combineWithTimeout(
+    args.abortSignal,
+    typeof args.timeoutMs === "number" && args.timeoutMs > 0
+      ? args.timeoutMs
+      : DEFAULT_TIMEOUT_MS,
+  );
   const eventTag = args.logEventTag ?? "llm_generate";
   try {
     const body: Record<string, unknown> = {
