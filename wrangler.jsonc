@@ -33,7 +33,7 @@
   //                 OpenAI and returns research_unavailable for
   //                 other providers.
   // LLM_MODEL is the model id passed to the selected provider
-  // (e.g. "gpt-5.2" for OpenAI, "claude-sonnet-4-6" for Anthropic).
+  // (e.g. "gpt-5.5" for OpenAI, "claude-sonnet-4-6" for Anthropic).
   //
   // API key secrets — preferred and fallback:
   //   wrangler secret put LLM_API_KEY      # preferred (any provider)
@@ -85,7 +85,7 @@
   "vars": {
     "LLM_ENABLED": "true",
     "LLM_PROVIDER": "openai",
-    "LLM_MODEL": "gpt-5.2",
+    "LLM_MODEL": "gpt-5.5",
     "LLM_GATE_ENABLED": "false"
   }
 
