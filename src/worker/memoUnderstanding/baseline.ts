@@ -169,6 +169,16 @@ const DISCLAIMER_PATTERNS: RegExp[] = [
   /\bplease see appendix\b/i,
   /\bimportant disclosures and disclaimers\b/i,
   /\bresearch analyst certification\b/i,
+  // Phase 6G.3: PDF page-footer fragments — "<Company> <Date> <Broker
+  // Limited> Page N" jammed together by the flatten step. They quote
+  // no thesis and just identify the doc, but they score well on
+  // valuation_anchor / management_claim keyword density when the
+  // broker name contains "Capital" or "Securities".
+  /\bpage\s+\d+\b.*\b(?:limited|ltd|securities|capital|institutional)\b/i,
+  /\b(?:limited|ltd|securities|capital|institutional)\b.*\bpage\s+\d+\b/i,
+  // History of Recommendation tables — useful as data but become a
+  // single mega-sentence after PDF flatten.
+  /\bhistory of recommendation/i,
 ];
 
 // Phase 6F.2: "broker-template scaffolding" — header lines that
@@ -997,6 +1007,16 @@ function labelSuffix(cat: CategoryKey, text: string): string | undefined {
       if (tp) return truncate(tp[0], 64);
       const pt = text.match(/price target(?:[^,.;]|[.,](?=\d))*/i);
       if (pt) return truncate(pt[0], 64);
+      // Phase 6G.3: PT/TP shortcuts. Broker memos abbreviate target
+      // price as "PT of INR 1,750" or "TP INR 1,750". Without a
+      // dedicated pattern the label fell through to liftHead, which
+      // (a) returned the whole sentence and (b) truncated at the
+      // thousand-separator comma — producing "We maintain BUY with a
+      // PT of INR 1". Capture just the relevant phrase here.
+      const ptShort = text.match(
+        /\b(?:PT|TP)\s*(?:of|:|=)?\s*(?:INR|Rs\.?|USD|EUR|\$|₹)?\s*[\d,]+(?:\.\d+)?/i,
+      );
+      if (ptShort) return truncate(ptShort[0].trim(), 64);
       const upside = text.match(/upside(?:[^,.;]|[.,](?=\d))*/i);
       if (upside) return truncate(upside[0], 64);
       if (/\bDCF\b/i.test(text)) return "DCF anchor";
@@ -1134,8 +1154,11 @@ function cleanAnchor(s: string | undefined): string | undefined {
 function liftHead(text: string, max: number): string {
   if (!text) return "";
   // Take the first clause (up to the first comma/semicolon/dash) then
-  // truncate.
-  const firstClause = text.split(/[,;—–]/)[0] ?? text;
+  // truncate. Commas that sit between digits (1,750 / 1,85,499 — Indian
+  // or Western thousand separators) are NOT clause boundaries; the
+  // lookarounds preserve them so an anchor like "PT of INR 1,750"
+  // doesn't truncate to "PT of INR 1".
+  const firstClause = text.split(/(?<!\d),(?!\d)|[;—–]/)[0] ?? text;
   const cleaned = firstClause.trim().replace(/\s+/g, " ");
   return truncate(cleaned, max);
 }
