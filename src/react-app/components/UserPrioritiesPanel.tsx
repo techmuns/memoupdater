@@ -22,7 +22,7 @@ interface UserPrioritiesPanelProps {
 const MAX_CHARS = 1500;
 
 const PLACEHOLDER =
-  "e.g.\n- Are major MFs (HDFC AMC, Nippon, Mirae) trimming or adding?\n- What did the Sojern earnout look like in the FY26 annual report?\n- Did the auditor flag any related-party transactions?";
+  "e.g.\n- Are large mutual funds or FIIs trimming or adding to the stock?\n- How did the latest acquisition or capex plan play out in the annual report?\n- Did the auditor flag any related-party transactions?";
 
 export function UserPrioritiesPanel({
   value,
