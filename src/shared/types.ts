@@ -1050,3 +1050,50 @@ export type MemoUnderstandingState =
       warnings: LlmGenerationWarning[];
     }
   | { kind: "error"; code: MemoUnderstandErrorCode; message: string };
+
+// ---------- Company picker: stock search (devde.muns.io proxy) ----------
+
+// One row of the stock-search dropdown. Derived from the upstream
+// `data.results` map, where each entry is keyed by ticker and the value is
+// the positional tuple [country, name, sector].
+export interface StockSearchResult {
+  ticker: string;
+  name: string;
+  country: string;
+  sector: string;
+}
+
+export interface StockSearchRequest {
+  query: string;
+}
+
+export type StockSearchErrorCode =
+  | "invalid_request"
+  | "not_configured"
+  | "upstream_error"
+  | "timeout"
+  | "provider_error";
+
+export type StockSearchResponse =
+  | {
+      ok: true;
+      query: string;
+      totalResults: number;
+      results: StockSearchResult[];
+    }
+  | {
+      ok: false;
+      code: StockSearchErrorCode;
+      message: string;
+    };
+
+// The company the user picked from the search box. This is the AUTHORITATIVE
+// identity for the project — it overrides the heuristic company/ticker that
+// `detectPeriodFromMemoText` guesses from the memo body (which can latch onto
+// a segment line-item, e.g. "Lloyd Electric" inside a Havells report).
+export interface SelectedCompany {
+  ticker: string;
+  companyName: string;
+  country?: string;
+  sector?: string;
+}

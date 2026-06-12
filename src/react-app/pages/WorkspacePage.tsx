@@ -22,6 +22,7 @@ import { Hero } from "../components/ui/Hero";
 import { Panel } from "../components/ui/Panel";
 import { UploadSlot } from "../components/ui/UploadSlot";
 import { ExtractionPreview } from "../components/ui/ExtractionPreview";
+import { CompanySearch } from "../components/CompanySearch";
 import { PrivacyDisclosure } from "../components/PrivacyDisclosure";
 import { PeriodPanel } from "../components/PeriodPanel";
 import { ResearchFindingsCard } from "../components/ResearchFindingsCard";
@@ -200,7 +201,12 @@ export function WorkspacePage() {
         memoProgress={state.progress}
       />
 
-      {/* Step 1 — Upload */}
+      {/* Step 1 — Company picker. Gates the upload so the project identity is
+          chosen explicitly instead of being heuristically (and sometimes
+          wrongly) detected from the memo body. */}
+      <CompanySearch />
+
+      {/* Step 2 — Upload (locked until a company is selected) */}
       <UploadSlot
         title="Upload the original investment memo"
         description="Supports .txt, .md, and .pdf. We extract the text locally to build memo DNA and detect the latest period covered."
@@ -209,6 +215,8 @@ export function WorkspacePage() {
         icon={UploadCloud}
         currentFile={state.initialFile}
         onFileSelected={onFile}
+        disabled={state.selectedCompany === null}
+        disabledHint="Use the company search above to choose the subject company, then the memo upload unlocks."
       />
       <PrivacyDisclosure variant="local" />
       <ExtractionPreview

@@ -133,4 +133,7 @@
   // Secrets (set with `wrangler secret put`, never committed):
   //   ANTHROPIC_API_KEY
   //   OPENAI_API_KEY
+  //   MUNS_ACCESS_TOKEN  # bearer token for POST /api/stock/search
+  //                      # (proxies devde.muns.io/stock/search). Without it,
+  //                      # the company picker returns code:"not_configured".
 }

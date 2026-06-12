@@ -14,6 +14,8 @@ import type {
   ResearchPassResponse,
   ResearchUpdatesRequest,
   ResearchUpdatesResponse,
+  StockSearchRequest,
+  StockSearchResponse,
   VersionResponse,
 } from "@shared/types";
 import { getLlmGateToken } from "./llmGateToken";
@@ -185,5 +187,16 @@ export const api = {
         signal,
         headers: gateHeader(),
       },
+    ),
+  // Company picker. The bearer token lives in the Worker — the browser only
+  // sends the free-text query and receives normalized rows back.
+  stockSearch: (
+    req: StockSearchRequest,
+    signal?: AbortSignal,
+  ) =>
+    postJson<StockSearchResponse, StockSearchRequest>(
+      "/api/stock/search",
+      req,
+      { signal },
     ),
 };

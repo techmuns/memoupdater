@@ -33,6 +33,7 @@ import type {
   ResearchPassRunState,
   ResearchProgress,
   SectionRunState,
+  SelectedCompany,
 } from "@shared/types";
 import { api } from "../lib/api";
 import { extractText } from "../lib/extract";
@@ -69,6 +70,13 @@ export interface PeriodOverride {
 }
 
 interface State {
+  // The company the user picked from the search box BEFORE uploading. This
+  // is the authoritative project identity — it overrides the heuristic
+  // company/ticker that period detection guesses from the memo body (which
+  // can latch onto a segment line-item, e.g. "Lloyd Electric" in a Havells
+  // report). null until a company is selected; the upload slot stays gated
+  // until then.
+  selectedCompany: SelectedCompany | null;
   initialFile: LocalUploadedFile | null;
   extraction: ExtractionResult | null;
   extractionStatus: ExtractionStatus;
@@ -102,6 +110,8 @@ interface State {
 }
 
 type Action =
+  | { type: "SET_SELECTED_COMPANY"; company: SelectedCompany }
+  | { type: "CLEAR_SELECTED_COMPANY" }
   | { type: "SET_INITIAL_FILE"; file: LocalUploadedFile | null }
   | { type: "SET_EXTRACTION_STATUS"; status: ExtractionStatus }
   | { type: "SET_EXTRACTION"; result: ExtractionResult }
@@ -198,6 +208,7 @@ function buildInitialResearchProgress(): ResearchProgress {
 }
 
 const initialState: State = {
+  selectedCompany: null,
   initialFile: null,
   extraction: null,
   extractionStatus: "idle",
@@ -222,6 +233,20 @@ const initialState: State = {
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
+    case "SET_SELECTED_COMPANY":
+      return {
+        ...state,
+        selectedCompany: action.company,
+        // Mirror the picked name into the period override so the header chip
+        // and every downstream company-name lookup reflect it immediately,
+        // even before a memo is uploaded.
+        periodOverride: {
+          ...state.periodOverride,
+          detectedCompany: action.company.companyName,
+        },
+      };
+    case "CLEAR_SELECTED_COMPANY":
+      return { ...state, selectedCompany: null };
     case "SET_INITIAL_FILE":
       return { ...state, initialFile: action.file };
     case "SET_EXTRACTION_STATUS":
@@ -238,7 +263,11 @@ function reducer(state: State, action: Action): State {
         dna: action.dna,
         detection: action.detection,
         periodOverride: {
-          detectedCompany: action.detection.detectedCompany,
+          // The user-picked company wins over the heuristic guess; period
+          // detection (start month, label) is still trusted and applied.
+          detectedCompany:
+            state.selectedCompany?.companyName ??
+            action.detection.detectedCompany,
           periodLabel: action.detection.best
             ? renderPeriodLabel(action.detection.best)
             : undefined,
@@ -480,6 +509,8 @@ function reducer(state: State, action: Action): State {
     case "RESET":
       return {
         ...initialState,
+        // Start over returns to the company picker — clear the prior pick.
+        selectedCompany: null,
         progress: buildInitialProgress(),
         researchProgress: buildInitialResearchProgress(),
         llmProviderStatus: state.llmProviderStatus,
@@ -503,6 +534,8 @@ interface MemoProjectContextValue {
     researchCurrent: string;
     assumptionNotes: string[];
   } | null;
+  setSelectedCompany: (company: SelectedCompany) => void;
+  clearSelectedCompany: () => void;
   extractInitialMemo: (file: File) => Promise<ExtractionResult>;
   setPeriodOverride: (override: PeriodOverride) => void;
   runResearch: () => Promise<void>;
@@ -573,6 +606,14 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  const setSelectedCompany = useCallback((company: SelectedCompany): void => {
+    dispatch({ type: "SET_SELECTED_COMPANY", company });
+  }, []);
+
+  const clearSelectedCompany = useCallback((): void => {
+    dispatch({ type: "CLEAR_SELECTED_COMPANY" });
+  }, []);
+
   const extractInitialMemo = useCallback(
     async (file: File): Promise<ExtractionResult> => {
       const ext = getExtension(file.name);
@@ -631,13 +672,18 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
   const runMemoUnderstandingOrchestrated = useCallback(async (): Promise<void> => {
     if (!state.dna || !state.extraction || !state.initialFile) return;
     const companyName =
+      state.selectedCompany?.companyName ??
       state.periodOverride.detectedCompany ??
       state.detection?.detectedCompany ??
       state.initialFile.filename.replace(/\.[^.]+$/, "");
-    const ticker = state.detection?.detectedTicker;
+    const ticker =
+      state.selectedCompany?.ticker ?? state.detection?.detectedTicker;
     const detection = state.detection
       ? detectionToResearchDetectionInput(state.detection, companyName)
       : undefined;
+    // The picked company is authoritative — don't let the heuristic's
+    // detectedCompany leak back in through the detection input.
+    if (detection) detection.detectedCompany = companyName;
 
     understandAbort.current?.abort();
     const controller = new AbortController();
@@ -653,6 +699,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
             id: state.dna.projectId,
             ticker,
             companyName,
+            sector: state.selectedCompany?.sector,
           },
           detection,
           memo: {
@@ -702,6 +749,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     state.initialFile,
     state.detection,
     state.periodOverride.detectedCompany,
+    state.selectedCompany,
   ]);
 
   const runMemoUnderstanding = useCallback(
@@ -752,12 +800,26 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       if (!periodLabel) return;
 
       const companyName =
+        state.selectedCompany?.companyName ??
         state.periodOverride.detectedCompany ??
         state.detection?.detectedCompany ??
         state.initialFile.filename.replace(/\.[^.]+$/, "");
+      const resolvedTicker =
+        state.selectedCompany?.ticker ?? state.detection?.detectedTicker;
+      // When the user picked a company, it overrides whatever the detector
+      // guessed for the alias set (name + ticker drive the web-search query
+      // variants), so a mis-detected segment name never reaches research.
+      const detectionForAliases =
+        state.selectedCompany && state.detection
+          ? {
+              ...state.detection,
+              detectedCompany: state.selectedCompany.companyName,
+              detectedTicker: state.selectedCompany.ticker,
+            }
+          : state.detection;
       const aliases = buildCompanyAliases(
-        state.detection,
-        { ticker: state.dna.projectId, companyName },
+        detectionForAliases,
+        { ticker: resolvedTicker ?? state.dna.projectId, companyName },
         state.dna,
       );
       const compactDna = buildCompactPassDna(state.dna);
@@ -784,6 +846,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
           id: state.dna.projectId,
           ticker: aliases.ticker,
           companyName,
+          sector: state.selectedCompany?.sector,
         },
         companyAliases: aliases,
         dna: compactDna,
@@ -889,6 +952,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       state.researchProgress.failedPassIds,
       state.understanding,
       state.userResearchPriorities,
+      state.selectedCompany,
     ],
   );
 
@@ -914,9 +978,14 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     ): Promise<void> => {
       if (!state.dna || !state.extraction || !state.initialFile) return;
       const companyName =
+        state.selectedCompany?.companyName ??
         state.periodOverride.detectedCompany ??
         state.detection?.detectedCompany ??
         state.initialFile.filename.replace(/\.[^.]+$/, "");
+      const ticker =
+        state.selectedCompany?.ticker ??
+        state.detection?.detectedTicker ??
+        companyName;
       const periodLabel =
         state.periodOverride.periodLabel ??
         (state.detection?.best ? renderPeriodLabel(state.detection.best) : "");
@@ -954,8 +1023,9 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       const result = await runSectionGeneration({
         project: {
           id: state.dna.projectId,
-          ticker: companyName,
+          ticker,
           companyName,
+          sector: state.selectedCompany?.sector,
         },
         dna: state.dna,
         detection: periodLabel
@@ -1048,6 +1118,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       state.completedSections,
       state.understanding,
       state.userResearchPriorities,
+      state.selectedCompany,
     ],
   );
 
@@ -1099,6 +1170,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     return {
       state,
       effectiveDetection,
+      setSelectedCompany,
+      clearSelectedCompany,
       extractInitialMemo,
       setPeriodOverride,
       runResearch,
@@ -1117,6 +1190,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     };
   }, [
     state,
+    setSelectedCompany,
+    clearSelectedCompany,
     extractInitialMemo,
     setPeriodOverride,
     runResearch,

@@ -11,6 +11,7 @@ import type {
 // without pulling React. Receives a minimal slice of MemoProjectContext
 // state; the consumer maps from useMemoProject() to this shape.
 export interface CommandBarStateSlice {
+  selectedCompany: { companyName: string; ticker: string } | null;
   detection: PeriodDetectionResult | null;
   periodOverride: { detectedCompany?: string };
   extraction: { source: { filename: string } } | null;
@@ -31,12 +32,19 @@ export interface CommandBarValues {
 export function deriveCommandBarValues(
   state: CommandBarStateSlice,
 ): CommandBarValues {
+  // The user-picked company is authoritative for both the label and the
+  // ticker chip; fall back to the heuristic detection only when nothing has
+  // been selected yet.
   const effectiveCompany = (
+    state.selectedCompany?.companyName ??
     state.periodOverride.detectedCompany ??
     state.detection?.detectedCompany ??
     ""
   ).trim();
-  const trailingTicker = state.detection?.detectedTicker?.trim() || undefined;
+  const trailingTicker =
+    state.selectedCompany?.ticker?.trim() ||
+    state.detection?.detectedTicker?.trim() ||
+    undefined;
   const projectLabel = effectiveCompany || "Memo Workspace";
 
   let stageLabel = "Upload memo";

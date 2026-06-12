@@ -15,6 +15,12 @@ export function CommandBar() {
   const { state } = useMemoProject();
   const { projectLabel, trailingTicker, stageLabel, stageTone } =
     deriveCommandBarValues({
+      selectedCompany: state.selectedCompany
+        ? {
+            companyName: state.selectedCompany.companyName,
+            ticker: state.selectedCompany.ticker,
+          }
+        : null,
       detection: state.detection,
       periodOverride: state.periodOverride,
       extraction: state.extraction

@@ -5,6 +5,10 @@ declare global {
   interface Env {
     LLM_API_KEY?: string;
     LLM_GATE_SECRET?: string;
+    // Bearer token for the upstream stock-search service (devde.muns.io),
+    // used by POST /api/stock/search. Set with `wrangler secret put
+    // MUNS_ACCESS_TOKEN`; never committed.
+    MUNS_ACCESS_TOKEN?: string;
   }
 }
 export {};

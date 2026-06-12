@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Upload, FileText, CheckCircle2 } from "lucide-react";
+import { Upload, FileText, CheckCircle2, Lock } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { formatBytes } from "../../lib/fileMeta";
 import type { LocalUploadedFile } from "@shared/types";
@@ -15,6 +15,9 @@ interface UploadSlotProps {
   /** When set, this slot shows real uploaded-file metadata instead of demo */
   currentFile?: LocalUploadedFile | null;
   onFileSelected?: (file: File) => void;
+  /** Locks the slot — used to gate upload behind an earlier step. */
+  disabled?: boolean;
+  disabledHint?: string;
 }
 
 export function UploadSlot({
@@ -26,6 +29,8 @@ export function UploadSlot({
   variant = "compact",
   currentFile,
   onFileSelected,
+  disabled = false,
+  disabledHint,
 }: UploadSlotProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -34,20 +39,23 @@ export function UploadSlot({
   const isReal = Boolean(currentFile);
 
   const handlePick = (file?: File) => {
-    if (!file) return;
+    if (disabled || !file) return;
     onFileSelected?.(file);
   };
 
   if (variant === "primary") {
     return (
       <div
+        aria-disabled={disabled}
         className={cn(
           // Phase 5I: subtle gradient when empty; settled solid + shadow
           // bump when a file is loaded. Hover ring only when empty.
           "relative rounded-[var(--radius-xl)] border-2 border-dashed p-7 flex flex-col gap-5 transition-shadow transition-colors",
-          isReal
-            ? "border-[var(--color-ink)] bg-[var(--color-ink-soft)]/40 shadow-[var(--shadow-md)]"
-            : "border-[var(--color-border-strong)] bg-gradient-to-br from-[var(--color-surface)] to-[var(--color-ink-soft)]/60 shadow-[var(--shadow-sm)] hover:border-[var(--color-ink)] hover:ring-2 hover:ring-[var(--color-ink)]/15",
+          disabled
+            ? "border-[var(--color-border)] bg-[var(--color-surface-muted)]/50"
+            : isReal
+              ? "border-[var(--color-ink)] bg-[var(--color-ink-soft)]/40 shadow-[var(--shadow-md)]"
+              : "border-[var(--color-border-strong)] bg-gradient-to-br from-[var(--color-surface)] to-[var(--color-ink-soft)]/60 shadow-[var(--shadow-sm)] hover:border-[var(--color-ink)] hover:ring-2 hover:ring-[var(--color-ink)]/15",
         )}
       >
         {isReal && (
@@ -83,12 +91,30 @@ export function UploadSlot({
 
         <button
           type="button"
-          onClick={() => inputRef.current?.click()}
-          className="flex items-center justify-center gap-2 h-12 rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] text-[13px] font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-ink)] transition-colors"
+          onClick={() => {
+            if (!disabled) inputRef.current?.click();
+          }}
+          disabled={disabled}
+          className={cn(
+            "flex items-center justify-center gap-2 h-12 rounded-[var(--radius-md)] border border-dashed text-[13px] font-medium transition-colors",
+            disabled
+              ? "border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-text-subtle)] cursor-not-allowed"
+              : "border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] hover:bg-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-ink)]",
+          )}
         >
-          <Upload className="w-4 h-4" />
-          {isReal ? "Replace file" : "Drop memo to begin"}
+          {disabled ? <Lock className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
+          {disabled
+            ? "Select a company first"
+            : isReal
+              ? "Replace file"
+              : "Drop memo to begin"}
         </button>
+
+        {disabled && disabledHint && (
+          <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug -mt-2">
+            {disabledHint}
+          </p>
+        )}
 
         {!isReal && (
           <div className="flex items-center gap-1.5 flex-wrap">

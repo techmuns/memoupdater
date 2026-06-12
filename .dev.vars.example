@@ -4,3 +4,7 @@
 # Phase 2+ placeholders:
 # ANTHROPIC_API_KEY=
 # OPENAI_API_KEY=
+#
+# Bearer token for the company-picker stock search (POST /api/stock/search,
+# proxies devde.muns.io). Without it the picker reports "not configured".
+# MUNS_ACCESS_TOKEN=
