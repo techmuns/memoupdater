@@ -401,6 +401,13 @@ function buildUserPrompt(req: GenerateMemoSectionRequest): string {
     appendMemoUnderstandingContext(lines, sectionId, req.memoUnderstandingDigest);
   }
 
+  // Phase 6C: user-supplied priorities. The dashboard's "What else should
+  // we test?" textbox surfaces here so every section knows the user's
+  // explicit asks. The model is told to weave these in where they fit
+  // the section's scope (without forcing them into sections where they
+  // don't belong).
+  appendUserPrioritiesBlock(lines, req.userPriorities);
+
   lines.push("# 5. Cross-finding context");
   if (positiveDevelopmentIds && positiveDevelopmentIds.length > 0) {
     lines.push(
@@ -499,6 +506,32 @@ function truncate(value: string, max: number): string {
   const s = value.trim();
   if (s.length <= max) return s;
   return `${s.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function appendUserPrioritiesBlock(
+  lines: string[],
+  userPriorities: string | undefined,
+): void {
+  if (typeof userPriorities !== "string") return;
+  const trimmed = userPriorities.trim();
+  if (trimmed.length === 0) return;
+  const capped =
+    trimmed.length > 1500 ? `${trimmed.slice(0, 1499)}…` : trimmed;
+  lines.push("");
+  lines.push("# 4c. User-supplied priorities for this memo");
+  lines.push(
+    "The portfolio manager explicitly asked us to address the items below. Weave them into THIS section ONLY where they fit the section's scope; if they don't fit here, they will be picked up by another section. Never invent evidence to address them.",
+  );
+  for (const raw of capped.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/^[-•*]/.test(line)) {
+      lines.push(line);
+    } else {
+      lines.push(`- ${line}`);
+    }
+  }
+  lines.push("");
 }
 
 // Phase 6A: memo-understanding anchor block for section prompts.

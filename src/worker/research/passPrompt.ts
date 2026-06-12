@@ -222,6 +222,13 @@ function buildUserPrompt(req: ResearchPassRequest): string {
     );
   }
 
+  // Phase 6C: user-supplied priorities. Rendered when the dashboard's
+  // "What else should we test?" textbox carries non-empty text. The
+  // model is told to ALSO validate these items where they fall within
+  // this pass's scope, but only WHERE THEY FALL — the orchestrator will
+  // surface them across other passes too.
+  appendUserPrioritiesBlock(lines, req.userPriorities);
+
   lines.push("");
   lines.push("# 5. Output requirements");
   lines.push(
@@ -299,6 +306,34 @@ function appendMemoSpecificBlock(
   lines.push(
     "- set `linkedResearchTaskId` to the task id if the finding answers a queued question.",
   );
+}
+
+function appendUserPrioritiesBlock(
+  lines: string[],
+  userPriorities: string | undefined,
+): void {
+  if (typeof userPriorities !== "string") return;
+  const trimmed = userPriorities.trim();
+  if (trimmed.length === 0) return;
+  // Cap to keep prompts bounded; 1500 chars is roughly 8–15 short items.
+  const capped =
+    trimmed.length > 1500 ? `${trimmed.slice(0, 1499)}…` : trimmed;
+  lines.push("");
+  lines.push("# User-supplied research priorities");
+  lines.push(
+    "The user (a portfolio manager) explicitly asked us to ALSO validate the items below. Where any of them falls within THIS pass's scope, treat it as a high-priority research question and try to source it. Where it does not, leave it for a sibling pass — do not stretch this pass beyond its scope.",
+  );
+  // Render the user text verbatim, line by line, with leading dashes for
+  // any line that doesn't already look like a bullet.
+  for (const raw of capped.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/^[-•*]/.test(line)) {
+      lines.push(line);
+    } else {
+      lines.push(`- ${line}`);
+    }
+  }
 }
 
 function formatAliases(aliases: ResearchPassCompanyAliases): string[] {

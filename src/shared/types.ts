@@ -632,6 +632,10 @@ export interface GenerateMemoSectionRequest {
   // valuation framework) — used by every core sec_* section + the three
   // supplementary sup_* panels.
   memoUnderstandingDigest?: MemoUnderstandingDigest;
+  // Phase 6C: user-supplied priorities echoed into every section prompt,
+  // so the memo body explicitly addresses the items the user asked us
+  // to test in addition to the auto-extracted flags.
+  userPriorities?: string;
   retryCompact?: boolean;
 }
 
@@ -726,6 +730,12 @@ export interface ResearchPassRequest {
   // flagged details, and research questions selected for this passId.
   memoUnderstandingDigest?: MemoUnderstandingDigest;
   passMemoTasks?: MemoUnderstandingResearchTask[];
+  // Phase 6C: user-supplied research priorities — free text the user
+  // entered into the dashboard's "What else should we test?" textarea.
+  // When present, the pass prompt renders an extra block telling the
+  // model to also validate these specific items where they fall within
+  // the pass scope.
+  userPriorities?: string;
   retryCompact?: boolean;
 }
 

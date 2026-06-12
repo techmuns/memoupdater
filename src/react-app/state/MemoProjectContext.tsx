@@ -90,6 +90,10 @@ interface State {
   // skips the requirement that memoUnderstanding succeed first. Surfaced
   // only inside a <details> disclosure in MemoUnderstandingCard.
   skipUnderstanding: boolean;
+  // Phase 6C: free-text the user typed into the "What else should we
+  // test?" priorities textbox. Threaded into every research pass and
+  // every memo section so the memo addresses what the user asked.
+  userResearchPriorities: string;
 }
 
 type Action =
@@ -158,6 +162,7 @@ type Action =
       message: string;
     }
   | { type: "SET_SKIP_UNDERSTANDING"; value: boolean }
+  | { type: "SET_USER_RESEARCH_PRIORITIES"; value: string }
   | { type: "RESET" };
 
 function buildInitialProgress(): MemoGenerationProgress {
@@ -205,6 +210,7 @@ const initialState: State = {
   gateTokenSet: false,
   understanding: { kind: "idle" },
   skipUnderstanding: false,
+  userResearchPriorities: "",
 };
 
 function reducer(state: State, action: Action): State {
@@ -460,6 +466,8 @@ function reducer(state: State, action: Action): State {
       };
     case "SET_SKIP_UNDERSTANDING":
       return { ...state, skipUnderstanding: action.value };
+    case "SET_USER_RESEARCH_PRIORITIES":
+      return { ...state, userResearchPriorities: action.value };
     case "RESET":
       return {
         ...initialState,
@@ -470,6 +478,7 @@ function reducer(state: State, action: Action): State {
         gateTokenSet: state.gateTokenSet,
         understanding: { kind: "idle" },
         skipUnderstanding: false,
+        userResearchPriorities: "",
       };
   }
 }
@@ -498,6 +507,8 @@ interface MemoProjectContextValue {
   runMemoUnderstanding: () => Promise<void>;
   rerunMemoUnderstanding: () => Promise<void>;
   skipMemoUnderstanding: () => void;
+  // Phase 6C
+  setUserResearchPriorities: (value: string) => void;
 }
 
 const Ctx = createContext<MemoProjectContextValue | null>(null);
@@ -681,6 +692,10 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "SET_SKIP_UNDERSTANDING", value: true });
   }, []);
 
+  const setUserResearchPriorities = useCallback((value: string): void => {
+    dispatch({ type: "SET_USER_RESEARCH_PRIORITIES", value });
+  }, []);
+
   // Auto-run memo understanding once DNA + extraction are ready and the
   // provider is configured. Only fires on the idle→loading transition
   // (the dependency check) so subsequent re-renders don't re-trigger.
@@ -737,6 +752,9 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       const memoUnderstandingDigest = understanding
         ? buildMemoUnderstandingDigest(understanding)
         : undefined;
+      const userPriorities = state.userResearchPriorities.trim()
+        ? state.userResearchPriorities
+        : undefined;
       const baseRequest = {
         project: {
           id: state.dna.projectId,
@@ -747,6 +765,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
         dna: compactDna,
         detection: baseDetection,
         memoUnderstandingDigest,
+        userPriorities,
       };
 
       const passesToRun =
@@ -845,6 +864,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       state.periodOverride,
       state.researchProgress.failedPassIds,
       state.understanding,
+      state.userResearchPriorities,
     ],
   );
 
@@ -904,6 +924,9 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       const memoUnderstandingDigestForGen = understandingForGen
         ? buildMemoUnderstandingDigest(understandingForGen)
         : undefined;
+      const userPrioritiesForGen = state.userResearchPriorities.trim()
+        ? state.userResearchPriorities
+        : undefined;
       const result = await runSectionGeneration({
         project: {
           id: state.dna.projectId,
@@ -925,6 +948,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
         research,
         initialMemoId: state.initialFile.id,
         memoUnderstandingDigest: memoUnderstandingDigestForGen,
+        userPriorities: userPrioritiesForGen,
         apiCall: (req, signal) => api.generateMemoSection(req, signal),
         signal: controller.signal,
         onSectionStart: (sectionId, attempt) => {
@@ -992,6 +1016,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       state.progress.failedSectionId,
       state.completedSections,
       state.understanding,
+      state.userResearchPriorities,
     ],
   );
 
@@ -1057,6 +1082,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       runMemoUnderstanding,
       rerunMemoUnderstanding,
       skipMemoUnderstanding,
+      setUserResearchPriorities,
     };
   }, [
     state,
@@ -1074,6 +1100,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     runMemoUnderstanding,
     rerunMemoUnderstanding,
     skipMemoUnderstanding,
+    setUserResearchPriorities,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

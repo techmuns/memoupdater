@@ -4,8 +4,10 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Download,
   FileText,
   Layers,
+  Printer,
 } from "lucide-react";
 import type {
   FollowUpMemo,
@@ -43,11 +45,27 @@ export function MemoReview({
   const [copied, setCopied] = useState(false);
 
   const markdown = useMemo(() => buildMarkdown(memo), [memo]);
+  const filenameStem = useMemo(() => buildFilenameStem(memo), [memo]);
   const copy = async () => {
     if (!markdown) return;
     await navigator.clipboard.writeText(markdown);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
+  };
+  const downloadMarkdown = (): void => {
+    if (!markdown) return;
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${filenameStem}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+  const printMemo = (): void => {
+    window.print();
   };
 
   const generatedDate = new Date(memo.generatedAt).toLocaleString("en-US", {
@@ -67,7 +85,7 @@ export function MemoReview({
     );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-print="memo">
       <header className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-sm)] px-6 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -84,15 +102,32 @@ export function MemoReview({
             {memo.title}
           </h2>
         </div>
-        <Button
-          variant="secondary"
-          onClick={copy}
-          leadingIcon={
-            copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />
-          }
-        >
-          {copied ? "Copied" : "Copy memo (Markdown)"}
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap memo-actions">
+          <Button
+            variant="primary"
+            onClick={downloadMarkdown}
+            leadingIcon={<Download className="w-4 h-4" />}
+          >
+            Download (Markdown)
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={printMemo}
+            leadingIcon={<Printer className="w-4 h-4" />}
+          >
+            Print / Save as PDF
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={copy}
+            leadingIcon={
+              copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />
+            }
+          >
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
       </header>
 
       <article className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-md)] px-8 sm:px-10 py-8">
@@ -508,4 +543,14 @@ function appendSectionMarkdown(
 
 function escapePipe(value: string): string {
   return value.replace(/\|/g, "\\|");
+}
+
+function buildFilenameStem(memo: FollowUpMemo): string {
+  const dateIso = memo.generatedAt.slice(0, 10);
+  const slug = memo.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return slug ? `${slug}-${dateIso}` : `follow-up-memo-${dateIso}`;
 }

@@ -12,6 +12,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import type {
+  ResearchPassId,
   ResearchPassRunState,
   SectionRunState,
 } from "@shared/types";
@@ -29,7 +30,12 @@ import { MemoMissionTracker } from "../components/MemoMissionTracker";
 import { MemoUnderstandingCard } from "../components/MemoUnderstandingCard";
 import { ReadinessStrip } from "../components/ReadinessStrip";
 import { MemoCompletionBanner } from "../components/MemoCompletionBanner";
+import { UserPrioritiesPanel } from "../components/UserPrioritiesPanel";
 import { deriveMissionTrackerSteps } from "../lib/missionTrackerState";
+import {
+  buildMemoUnderstandingDigest,
+  selectTasksForPass,
+} from "../lib/memoUnderstandingSummary";
 import { useMemoProject } from "../state/MemoProjectContext";
 
 export function WorkspacePage() {
@@ -45,6 +51,7 @@ export function WorkspacePage() {
     startOver,
     rerunMemoUnderstanding,
     skipMemoUnderstanding,
+    setUserResearchPriorities,
   } = useMemoProject();
 
   const status = state.llmProviderStatus;
@@ -74,6 +81,42 @@ export function WorkspacePage() {
     }
     return undefined;
   }, [state.research]);
+
+  // Phase 6C: per-pass memo-anchored task list. Used by the research
+  // progress UI to show the SPECIFIC items being validated under each
+  // pass, instead of just generic pass titles. We also fold user-supplied
+  // priorities (rendered as plain bullets per pass — every pass sees them,
+  // matching how the worker prompt block works).
+  const tasksByPass = useMemo<Record<ResearchPassId, string[]>>(() => {
+    const empty: Record<ResearchPassId, string[]> = {
+      official_results: [],
+      management_call: [],
+      investor_presentation: [],
+      press_and_results: [],
+      valuation_market: [],
+      risks_competition: [],
+    };
+    if (state.understanding.kind !== "success") return empty;
+    const digest = buildMemoUnderstandingDigest(state.understanding.understanding);
+    const out = empty;
+    (Object.keys(out) as ResearchPassId[]).forEach((passId) => {
+      const tasks = selectTasksForPass(digest, passId).map((t) =>
+        (t.memoAnchor || t.question).slice(0, 120),
+      );
+      out[passId] = tasks.slice(0, 4);
+    });
+    return out;
+  }, [state.understanding]);
+
+  const userPriorityLines = useMemo(() => {
+    const trimmed = state.userResearchPriorities.trim();
+    if (!trimmed) return [] as string[];
+    return trimmed
+      .split(/\r?\n/)
+      .map((l) => l.replace(/^[-•*]\s*/, "").trim())
+      .filter((l) => l.length > 0)
+      .slice(0, 6);
+  }, [state.userResearchPriorities]);
 
   const missionSteps = useMemo(
     () =>
@@ -156,6 +199,18 @@ export function WorkspacePage() {
           onRerun={() => void rerunMemoUnderstanding()}
           onEmergencySkip={skipMemoUnderstanding}
           skipUnderstanding={state.skipUnderstanding}
+        />
+      )}
+
+      {/* Phase 6C: User-supplied priorities. Mounts as soon as DNA is
+          ready (regardless of memo-understanding state) so the user can
+          start typing while understanding is being computed. */}
+      {dnaReady && (
+        <UserPrioritiesPanel
+          value={state.userResearchPriorities}
+          onChange={setUserResearchPriorities}
+          researchHasRun={Boolean(state.research)}
+          disabled={researchLoading || memoLoading}
         />
       )}
 
@@ -250,7 +305,11 @@ export function WorkspacePage() {
             state.researchProgress.passes.some(
               (p) => p.status !== "pending",
             ) && (
-              <ResearchProgressList passes={state.researchProgress.passes} />
+              <ResearchProgressList
+                passes={state.researchProgress.passes}
+                tasksByPass={tasksByPass}
+                userPriorityLines={userPriorityLines}
+              />
             )}
 
           {state.researchProgress.kind === "complete_with_warnings" &&
@@ -423,11 +482,22 @@ function SetupRequiredPanel({
   );
 }
 
-// Phase 5E: 6-row per-pass research progress list. Shown while research is
-// running, after partial-success ("complete_with_warnings"), and after
-// hard failure so the user can see exactly which passes completed, failed,
-// or were skipped.
-function ResearchProgressList({ passes }: { passes: ResearchPassRunState[] }) {
+// Phase 5E / 6C: 6-row per-pass research progress list. Shown while
+// research is running, after partial-success ("complete_with_warnings"),
+// and after hard failure so the user can see exactly which passes
+// completed, failed, or were skipped. Phase 6C adds per-pass
+// "Validating: …" lines so the workflow visibility is concrete (the
+// specific memo-anchored items being checked under each pass), plus a
+// global user-priorities chip row at the top when the user supplied any.
+function ResearchProgressList({
+  passes,
+  tasksByPass,
+  userPriorityLines,
+}: {
+  passes: ResearchPassRunState[];
+  tasksByPass: Record<ResearchPassId, string[]>;
+  userPriorityLines: string[];
+}) {
   const total = passes.length;
   const completed = passes.filter((p) => p.status === "success").length;
   const running = passes.find((p) => p.status === "running");
@@ -442,52 +512,89 @@ function ResearchProgressList({ passes }: { passes: ResearchPassRunState[] }) {
       <div className="text-[12.5px] font-semibold text-[var(--color-text)] mb-2">
         {headline}
       </div>
-      <ol className="space-y-1.5">
-        {passes.map((p, i) => (
-          <li
-            key={p.id}
-            className="flex items-center gap-2 text-[12px] text-[var(--color-text)]"
-          >
-            <span className="w-4 inline-flex justify-center">
-              {p.status === "success" ? (
-                <Check className="w-3.5 h-3.5 text-[var(--color-success)]" />
-              ) : p.status === "running" ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--color-ink)]" />
-              ) : p.status === "failed" ? (
-                <AlertCircle className="w-3.5 h-3.5 text-[var(--color-warning)]" />
-              ) : (
-                <Circle className="w-3 h-3 text-[var(--color-text-subtle)]" />
-              )}
-            </span>
-            <span className="tnum w-5 text-right text-[var(--color-text-subtle)]">
-              {String(i + 1).padStart(2, "0")}
-            </span>
-            <span
-              className={
-                p.status === "pending"
-                  ? "text-[var(--color-text-subtle)]"
-                  : ""
-              }
+      {userPriorityLines.length > 0 && (
+        <div className="mb-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2.5 py-2">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-ink)] mb-1">
+            Your priorities (echoed into every pass)
+          </div>
+          <ul className="space-y-0.5">
+            {userPriorityLines.map((line, i) => (
+              <li
+                key={i}
+                className="text-[11.5px] text-[var(--color-text)] leading-snug"
+              >
+                · {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <ol className="space-y-2">
+        {passes.map((p, i) => {
+          const tasks = tasksByPass[p.id] ?? [];
+          return (
+            <li
+              key={p.id}
+              className="text-[12px] text-[var(--color-text)]"
             >
-              {p.title}
-            </span>
-            {p.status === "success" && typeof p.findingCount === "number" && (
-              <span className="text-[10.5px] text-[var(--color-text-subtle)]">
-                · {p.findingCount} finding{p.findingCount === 1 ? "" : "s"}
-              </span>
-            )}
-            {p.status === "running" && p.attempt === 2 && (
-              <span className="text-[10.5px] text-[var(--color-text-subtle)]">
-                · retrying (compact)
-              </span>
-            )}
-            {p.status === "failed" && p.errorCode && (
-              <span className="text-[10.5px] text-[var(--color-warning)]">
-                · {p.errorCode}
-              </span>
-            )}
-          </li>
-        ))}
+              <div className="flex items-center gap-2">
+                <span className="w-4 inline-flex justify-center">
+                  {p.status === "success" ? (
+                    <Check className="w-3.5 h-3.5 text-[var(--color-success)]" />
+                  ) : p.status === "running" ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--color-ink)]" />
+                  ) : p.status === "failed" ? (
+                    <AlertCircle className="w-3.5 h-3.5 text-[var(--color-warning)]" />
+                  ) : (
+                    <Circle className="w-3 h-3 text-[var(--color-text-subtle)]" />
+                  )}
+                </span>
+                <span className="tnum w-5 text-right text-[var(--color-text-subtle)]">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span
+                  className={
+                    p.status === "pending"
+                      ? "text-[var(--color-text-subtle)]"
+                      : "font-medium"
+                  }
+                >
+                  {p.title}
+                </span>
+                {p.status === "success" && typeof p.findingCount === "number" && (
+                  <span className="text-[10.5px] text-[var(--color-text-subtle)]">
+                    · {p.findingCount} finding{p.findingCount === 1 ? "" : "s"}
+                  </span>
+                )}
+                {p.status === "running" && p.attempt === 2 && (
+                  <span className="text-[10.5px] text-[var(--color-text-subtle)]">
+                    · retrying (compact)
+                  </span>
+                )}
+                {p.status === "failed" && p.errorCode && (
+                  <span className="text-[10.5px] text-[var(--color-warning)]">
+                    · {p.errorCode}
+                  </span>
+                )}
+              </div>
+              {tasks.length > 0 && (
+                <ul className="mt-1 pl-11 space-y-0.5">
+                  {tasks.map((t, ti) => (
+                    <li
+                      key={ti}
+                      className="text-[10.5px] text-[var(--color-text-muted)] leading-snug"
+                    >
+                      <span className="text-[var(--color-text-subtle)]">
+                        Validating:
+                      </span>{" "}
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

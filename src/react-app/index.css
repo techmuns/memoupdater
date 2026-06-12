@@ -159,3 +159,53 @@ body::before {
 .nav-dot[data-active="true"] {
   background: var(--color-ink);
 }
+
+/* Phase 6C: print stylesheet. window.print() should yield a clean memo
+   PDF — just the memo title header + memo body + any expanded
+   supplementary panels. Everything else (workflow rails, status chips,
+   navigation, action buttons) is hidden. */
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 14mm;
+  }
+  body {
+    background: #ffffff !important;
+  }
+  /* Hide everything except the elements marked print-allowed. The memo
+     reader marks its container with data-print="memo"; everything else
+     in the workspace is dropped to keep the PDF to memo content only. */
+  body > * {
+    display: none !important;
+  }
+  [data-print="memo"],
+  [data-print="memo"] * {
+    display: revert !important;
+  }
+  [data-print="memo"] {
+    display: block !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+  [data-print="memo"] .memo-actions,
+  [data-print="memo"] [data-print-hide] {
+    display: none !important;
+  }
+  [data-print="memo"] article {
+    box-shadow: none !important;
+    border: 0 !important;
+    padding: 0 !important;
+    page-break-inside: auto;
+  }
+  [data-print="memo"] section {
+    page-break-inside: avoid;
+  }
+  [data-print="memo"] h2,
+  [data-print="memo"] h3 {
+    page-break-after: avoid;
+  }
+}

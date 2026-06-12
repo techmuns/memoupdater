@@ -431,6 +431,8 @@ export interface RunSectionGenerationArgs {
   // section request carries it and the section prompt adds the
   // memo-anchored "Original memo's anchor" block.
   memoUnderstandingDigest?: MemoUnderstandingDigest;
+  // Phase 6C: user-supplied priorities, echoed into every section request.
+  userPriorities?: string;
   apiCall: (
     req: GenerateMemoSectionRequest,
     signal?: AbortSignal,
@@ -628,6 +630,7 @@ function buildSectionRequest(
     styleSample: styleSample.length > 0 ? styleSample : undefined,
     initialMemoId: args.initialMemoId,
     memoUnderstandingDigest: args.memoUnderstandingDigest,
+    userPriorities: args.userPriorities,
     retryCompact: retryCompact ? true : undefined,
   };
   if (sectionId === "sec_investment_action") {
