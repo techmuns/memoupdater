@@ -52,10 +52,27 @@ import {
 import { buildBaselineMemoUnderstanding } from "./baseline";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
-const UNDERSTAND_MAX_OUTPUT_TOKENS = 2_400;
-const UNDERSTAND_REPAIR_MAX_OUTPUT_TOKENS = 1_600;
-const UNDERSTAND_ULTRA_COMPACT_MAX_OUTPUT_TOKENS = 1_200;
+// Phase 6F: budgets raised after diagnosing persistent baseline
+// recovery. A complete MemoUnderstanding JSON runs ~3.5–5k output
+// tokens, and on reasoning models (gpt-5.x) max_output_tokens covers
+// reasoning tokens too — the old 2,400 budget truncated mid-JSON on
+// every content-rich memo, and the 1,600 repair budget (re-emitting the
+// SAME full schema) could never succeed where the primary failed. These
+// are ceilings, not spend — completed responses only bill what they
+// actually generate. All three tiers also now request reasoning effort
+// "low" (pure extraction needs no deep reasoning), which frees most of
+// the budget for JSON and cuts latency/timeouts.
+const UNDERSTAND_MAX_OUTPUT_TOKENS = 6_000;
+const UNDERSTAND_REPAIR_MAX_OUTPUT_TOKENS = 6_000;
+const UNDERSTAND_ULTRA_COMPACT_MAX_OUTPUT_TOKENS = 2_500;
 const GATE_HEADER = "x-memo-llm-gate";
+
+// Attach reasoning effort only for model families that accept the
+// `reasoning` param; other models reject unknown params with HTTP 400.
+function reasoningEffortForModel(model: string | undefined): "low" | undefined {
+  if (!model) return undefined;
+  return /^(gpt-5|o\d)/i.test(model) ? "low" : undefined;
+}
 
 export async function handleMemoUnderstand(
   c: Context<{ Bindings: Env }>,
@@ -187,6 +204,7 @@ export async function handleMemoUnderstand(
       schema: MEMO_UNDERSTANDING_OPENAI_SCHEMA,
       schemaName: MEMO_UNDERSTANDING_FORMAT_NAME,
       maxTokens: UNDERSTAND_MAX_OUTPUT_TOKENS,
+      reasoningEffort: reasoningEffortForModel(readiness.model),
       abortSignal: c.req.raw.signal,
       logEventTag: "llm_understand",
     });
@@ -320,6 +338,7 @@ async function tryRepair(
     schema: MEMO_UNDERSTANDING_OPENAI_SCHEMA,
     schemaName: MEMO_UNDERSTANDING_FORMAT_NAME,
     maxTokens: UNDERSTAND_REPAIR_MAX_OUTPUT_TOKENS,
+    reasoningEffort: reasoningEffortForModel(readiness.model),
     abortSignal: c.req.raw.signal,
     logEventTag: "llm_understand_repair",
   });
@@ -468,6 +487,7 @@ async function tryUltraCompact(
     schema: MEMO_UNDERSTANDING_ULTRA_COMPACT_OPENAI_SCHEMA,
     schemaName: MEMO_UNDERSTANDING_ULTRA_COMPACT_FORMAT_NAME,
     maxTokens: UNDERSTAND_ULTRA_COMPACT_MAX_OUTPUT_TOKENS,
+    reasoningEffort: reasoningEffortForModel(readiness.model),
     abortSignal: c.req.raw.signal,
     logEventTag: "llm_understand_ultra_compact",
   });

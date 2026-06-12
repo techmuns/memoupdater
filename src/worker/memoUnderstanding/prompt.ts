@@ -11,8 +11,9 @@ import type { MemoUnderstandRequest } from "@shared/types";
 //   quality issues, segment/margin dependencies, forecasts, catalysts,
 //   risks, must-verify items). Generic extracted facts (dates, headcount,
 //   addresses, broker brand) MUST NOT be emitted as flagged details.
-// - whyItMatters MUST be of the form "Matters for updating the memo
-//   because …" so the dashboard line reads as an analyst note.
+// - whyItMatters MUST be of the form "Matters because …" — short
+//   analyst-note phrasing (the long "Matters for updating the memo
+//   because …" boilerplate ate dashboard space without adding signal).
 // - NO web search; the understanding step never goes to the web. The
 //   model cannot fabricate citations — only `memoEvidence` (short
 //   verbatim quote from the uploaded memo) is permitted.
@@ -60,18 +61,19 @@ export function buildUnderstandPrompt(
     "  - at most 4 'what the memo needs to be right' items, 4 'what would change the view' items;",
     "  - at most 4 missing-from-memo items, 4 ambiguous items.",
     "",
-    "Per-field length budgets (terse, analyst voice — sentences not paragraphs):",
-    "  - summary.oneLineSummary ≤ 200 chars (one tight sentence).",
-    "  - summary.shortSummary ≤ 600 chars (3–5 short lines max).",
-    "  - thesis.oneLineThesis ≤ 200 chars; thesis.detailedThesis ≤ 600 chars.",
-    "  - flaggedDetails[i].label ≤ 100 chars; .detail ≤ 200 chars.",
-    "  - flaggedDetails[i].whyItMatters: ONE short sentence ≤ 180 chars, MUST start with 'Matters for updating the memo because …'.",
-    "  - flaggedDetails[i].memoEvidence: ONE short verbatim quote from the uploaded memo, ≤ 200 chars. NEVER fabricate.",
-    "  - flaggedDetails[i].researchQuestion: ONE short sentence ≤ 200 chars.",
-    "  - thesisPillars[i].label ≤ 140 chars; .originalClaim ≤ 240 chars; .evidenceFromMemo: one verbatim head ≤ 200 chars.",
-    "  - financials.*: each whyItMatters / researchQuestion ≤ 200 chars; metric/value/period short.",
-    "  - researchPlan.researchTasks[i].question ≤ 200 chars; .memoAnchor ≤ 160 chars; .expectedEvidence ≤ 200 chars.",
-    "  - All other free-text fields ≤ 200 chars.",
+    "Per-field length budgets (HARD — the dashboard shows these to a portfolio manager who wants SHORT context; long strings get truncated mid-word):",
+    "  - summary.oneLineSummary ≤ 160 chars (one tight sentence).",
+    "  - summary.shortSummary ≤ 300 chars (2–3 short lines max).",
+    "  - thesis.oneLineThesis ≤ 160 chars; thesis.detailedThesis ≤ 400 chars.",
+    "  - flaggedDetails[i].label ≤ 64 chars — '<specific item>' not a sentence (e.g. 'Target 1,750 at 50x Dec'27E EPS', 'C&W drives 33% growth').",
+    "  - flaggedDetails[i].detail ≤ 140 chars — ONE clause of context, not the whole memo sentence.",
+    "  - flaggedDetails[i].whyItMatters: ONE short sentence ≤ 120 chars, MUST start with 'Matters because …'.",
+    "  - flaggedDetails[i].memoEvidence: ONE short verbatim quote from the uploaded memo, ≤ 140 chars. NEVER fabricate.",
+    "  - flaggedDetails[i].researchQuestion: ONE short sentence ≤ 140 chars.",
+    "  - thesisPillars[i].label ≤ 80 chars; .originalClaim ≤ 160 chars; .evidenceFromMemo: one verbatim head ≤ 140 chars.",
+    "  - financials.*: each whyItMatters / researchQuestion ≤ 140 chars; metric/value/period short.",
+    "  - researchPlan.researchTasks[i].question ≤ 140 chars; .memoAnchor ≤ 80 chars (a label, not a sentence); .expectedEvidence ≤ 120 chars.",
+    "  - All other free-text fields ≤ 160 chars.",
     "",
     "Your output must answer:",
     "  - what did this memo believe? (oneLineThesis + detailedThesis)",

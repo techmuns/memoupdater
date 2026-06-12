@@ -173,18 +173,21 @@ const CAT_TO_IMPORTANCE: Record<CategoryKey, MemoUnderstandingImportance> = {
   contradiction: "high",
 };
 
+// Phase 6F: compact "Matters because …" phrasing. The earlier
+// "Matters for updating the memo because …" boilerplate ate dashboard
+// space without adding signal — the client asked for short context.
 const CAT_WHY: Record<CategoryKey, string> = {
-  valuation_anchor: "Matters for updating the memo because the original valuation anchor must hold for the target price to be defensible.",
-  earnings_quality: "Matters for updating the memo because the print quality decides whether the memo's growth thesis was operating-led or distorted by below-the-line items.",
-  segment_driver: "Matters for updating the memo because this segment was a core driver of the original revenue thesis.",
-  margin_driver: "Matters for updating the memo because the memo's margin assumption drives the EPS bridge and the implied target price.",
-  financial_claim: "Matters for updating the memo because this financial line item underpins the memo's quantitative thesis.",
-  management_claim: "Matters for updating the memo because management commentary anchored the memo's forward-looking expectations.",
-  catalyst: "Matters for updating the memo because this catalyst was expected to drive the next leg of re-rating.",
-  risk: "Matters for updating the memo because this risk could materially weaken the memo's forward-looking view.",
-  must_verify: "Matters for updating the memo because this assumption must be re-verified before the memo's call can stand.",
-  source_gap: "Matters for updating the memo because the original memo did not establish this point clearly.",
-  contradiction: "Matters for updating the memo because the original memo's claim conflicts with a known data point.",
+  valuation_anchor: "Matters because the target price stands or falls on this anchor.",
+  earnings_quality: "Matters because print quality decides if growth was operating-led.",
+  segment_driver: "Matters because this segment carried the revenue thesis.",
+  margin_driver: "Matters because the margin assumption drives the EPS bridge.",
+  financial_claim: "Matters because this line item underpins the quantitative thesis.",
+  management_claim: "Matters because management's claim anchored forward expectations.",
+  catalyst: "Matters because this catalyst was expected to drive re-rating.",
+  risk: "Matters because this risk could weaken the forward view.",
+  must_verify: "Matters because the call depends on re-verifying this assumption.",
+  source_gap: "Matters because the memo did not establish this point.",
+  contradiction: "Matters because the memo's claim conflicts with a known data point.",
 };
 
 const CAT_QUESTION_TEMPLATE: Record<CategoryKey, (anchor: string) => string> = {
@@ -254,6 +257,15 @@ function segmentSentences(text: string): Sentence[] {
   let bufStart = -1;
   const flush = () => {
     const trimmed = buf.trim();
+    // Skip broker-header boilerplate: lines like "19 January 2026 India |
+    // Consumer Durables | Result Update … | BUY" carry ≥2 pipe separators
+    // and pollute flags with non-thesis noise.
+    const pipeCount = (trimmed.match(/\|/g) ?? []).length;
+    if (pipeCount >= 2) {
+      buf = "";
+      bufStart = -1;
+      return;
+    }
     if (trimmed.length >= 30 && trimmed.length <= 320) {
       // Find the actual start position of the trimmed slice within text.
       const ltrim = buf.length - buf.trimStart().length;
@@ -491,16 +503,24 @@ export function buildBaselineMemoUnderstanding(
       if (usedSentenceStarts.has(s.start)) continue;
       const id = `bfd${String(flagSeq).padStart(2, "0")}`;
       flagSeq += 1;
-      const label = makeLabel(cat, s.text);
+      // The question template receives the SPECIFIC anchor (not the
+      // category-prefixed label) so questions read 'Is "target price
+      // INR 960" still defensible…' rather than repeating the category
+      // name inside the quote.
+      const anchor =
+        cleanAnchor(labelSuffix(cat, s.text)) ?? cleanAnchor(liftHead(s.text, 60));
+      const label = anchor
+        ? `${CATEGORY_PREFIX[cat]} — ${anchor}`
+        : CATEGORY_PREFIX[cat];
       flags.push({
         id,
         label,
-        detail: truncate(s.text, 200),
+        detail: truncate(s.text, 160),
         category: cat,
         importance: CAT_TO_IMPORTANCE[cat],
-        whyItMatters: makeWhyItMatters(cat, s.text),
-        memoEvidence: truncate(s.text, 200),
-        researchQuestion: CAT_QUESTION_TEMPLATE[cat](label),
+        whyItMatters: CAT_WHY[cat],
+        memoEvidence: truncate(s.text, 160),
+        researchQuestion: CAT_QUESTION_TEMPLATE[cat](anchor || label),
       });
       usedSentenceStarts.add(s.start);
     }
@@ -596,7 +616,7 @@ export function buildBaselineMemoUnderstanding(
   if (topFinSentence && topFinSentence.start !== topValSentence?.start) {
     shortSummaryParts.push(truncate(topFinSentence.text, 200));
   }
-  const shortSummary = truncate(shortSummaryParts.join(" "), 600);
+  const shortSummary = truncate(shortSummaryParts.join(" "), 300);
   const originalThesis = truncate(args.dna?.originalThesis ?? shortSummary, 600);
 
   const needsToBeRight = mapSentenceHeads(
@@ -754,11 +774,11 @@ function makeLabel(cat: CategoryKey, text: string): string {
   // phrase lifted from the sentence so two flags in the same category
   // never render identically.
   const prefix = CATEGORY_PREFIX[cat];
-  const suffix = labelSuffix(cat, text);
+  const suffix = cleanAnchor(labelSuffix(cat, text));
   if (suffix) return `${prefix} — ${suffix}`;
   // Last-resort fallback: lift the first noun-phrase-looking chunk of
   // the sentence so the row is still distinctive.
-  const head = liftHead(text, 60);
+  const head = cleanAnchor(liftHead(text, 60));
   return head ? `${prefix} — ${head}` : prefix;
 }
 
@@ -786,71 +806,86 @@ function labelSuffix(cat: CategoryKey, text: string): string | undefined {
         text.match(/(\d+(?:\.\d+)?x\s+\w+['']?\d{2}[EF]?\s+EPS)/i) ||
         text.match(/(\d+(?:\.\d+)?x\s+(?:P\/?E|EV\/EBITDA))/i) ||
         text.match(/((?:P\/?E|EV\/EBITDA|P\/B)\s*(?:of|multiple)?\s*\d+(?:\.\d+)?x?)/i);
-      if (m) return truncate(m[1], 100);
-      const tp = text.match(/target price[^,.;]*/i);
-      if (tp) return truncate(tp[0], 100);
-      const pt = text.match(/price target[^,.;]*/i);
-      if (pt) return truncate(pt[0], 100);
-      const upside = text.match(/upside[^,.;]*/i);
-      if (upside) return truncate(upside[0], 100);
+      if (m) return truncate(m[1], 64);
+      const tp = text.match(/target price(?:[^,.;]|[.,](?=\d))*/i);
+      if (tp) return truncate(tp[0], 64);
+      const pt = text.match(/price target(?:[^,.;]|[.,](?=\d))*/i);
+      if (pt) return truncate(pt[0], 64);
+      const upside = text.match(/upside(?:[^,.;]|[.,](?=\d))*/i);
+      if (upside) return truncate(upside[0], 64);
       if (/\bDCF\b/i.test(text)) return "DCF anchor";
       if (/\bSOTP\b/i.test(text)) return "SOTP anchor";
       return undefined;
     }
     case "earnings_quality": {
       const m =
-        text.match(/(other income[^,.;]{0,80})/i) ||
-        text.match(/(fair value[^,.;]{0,80})/i) ||
-        text.match(/(one[- ]off[^,.;]{0,80})/i) ||
-        text.match(/(non[- ]recurring[^,.;]{0,80})/i) ||
-        text.match(/(exceptional[^,.;]{0,80})/i) ||
-        text.match(/(below[- ]the[- ]line[^,.;]{0,80})/i) ||
-        text.match(/(core EBITDA[^,.;]{0,80})/i);
-      return m ? truncate(m[1], 100) : undefined;
+        text.match(/(other income(?:[^,.;]|[.,](?=\d)){0,80})/i) ||
+        text.match(/(fair value(?:[^,.;]|[.,](?=\d)){0,80})/i) ||
+        text.match(/(one[- ]off(?:[^,.;]|[.,](?=\d)){0,80})/i) ||
+        text.match(/(non[- ]recurring(?:[^,.;]|[.,](?=\d)){0,80})/i) ||
+        text.match(/(exceptional(?:[^,.;]|[.,](?=\d)){0,80})/i) ||
+        text.match(/(below[- ]the[- ]line(?:[^,.;]|[.,](?=\d)){0,80})/i) ||
+        text.match(/(core EBITDA(?:[^,.;]|[.,](?=\d)){0,80})/i);
+      return m ? truncate(m[1], 64) : undefined;
     }
     case "segment_driver": {
       const segMatch = text.match(
-        /\b(C&W|Lloyd|ECD|RAC|cables|wires|switchgear|lighting)\b[^,.;]{0,80}/i,
+        /\b(C&W|Lloyd|ECD|RAC|cables|wires|switchgear|lighting)\b(?:[^,.;]|[.,](?=\d)){0,80}/i,
       );
-      if (segMatch) return truncate(segMatch[0], 100);
-      const generic = text.match(/(segment[^,.;]{0,80})/i);
-      return generic ? truncate(generic[1], 100) : undefined;
+      if (segMatch) return truncate(segMatch[0], 64);
+      const generic = text.match(/(segment(?:[^,.;]|[.,](?=\d)){0,80})/i);
+      return generic ? truncate(generic[1], 64) : undefined;
     }
     case "margin_driver": {
       const m =
-        text.match(/((?:EBITDA|EBIT|gross|operating) margin[^,.;]{0,80})/i) ||
-        text.match(/(margin (?:compression|expansion)[^,.;]{0,80})/i);
-      return m ? truncate(m[1], 100) : undefined;
+        text.match(/((?:EBITDA|EBIT|gross|operating) margin(?:[^,.;]|[.,](?=\d)){0,80})/i) ||
+        text.match(/(margin (?:compression|expansion)(?:[^,.;]|[.,](?=\d)){0,80})/i);
+      return m ? truncate(m[1], 64) : undefined;
     }
     case "financial_claim": {
       const m =
-        text.match(/((?:revenue|sales|EBITDA|EBIT|PAT|EPS)[^,.;]{0,80})/i);
-      return m ? truncate(m[1], 100) : undefined;
+        text.match(/((?:revenue|sales|EBITDA|EBIT|PAT|EPS)(?:[^,.;]|[.,](?=\d)){0,80})/i);
+      return m ? truncate(m[1], 64) : undefined;
     }
     case "management_claim": {
       const m =
-        text.match(/((?:guidance|guided|commentary|management said|management stated)[^,.;]{0,80})/i);
-      return m ? truncate(m[1], 100) : undefined;
+        text.match(/((?:guidance|guided|commentary|management said|management stated)(?:[^,.;]|[.,](?=\d)){0,80})/i);
+      return m ? truncate(m[1], 64) : undefined;
     }
     case "catalyst": {
       const m =
-        text.match(/((?:catalyst|re[- ]rating|trigger|capacity|expansion)[^,.;]{0,80})/i);
-      return m ? truncate(m[1], 100) : undefined;
+        text.match(/((?:catalyst|re[- ]rating|trigger|capacity|expansion)(?:[^,.;]|[.,](?=\d)){0,80})/i);
+      return m ? truncate(m[1], 64) : undefined;
     }
     case "risk": {
       const m =
-        text.match(/((?:risk|slowdown|inventory|channel|pricing|input cost|headwind|regulatory)[^,.;]{0,80})/i);
-      return m ? truncate(m[1], 100) : undefined;
+        text.match(/((?:risk|slowdown|inventory|channel|pricing|input cost|headwind|regulatory)(?:[^,.;]|[.,](?=\d)){0,80})/i);
+      return m ? truncate(m[1], 64) : undefined;
     }
     case "must_verify": {
       const m =
-        text.match(/((?:assume|assumption|forecast|estimate|expect)[^,.;]{0,80})/i);
-      return m ? truncate(m[1], 100) : undefined;
+        text.match(/((?:assume|assumption|forecast|estimate|expect)(?:[^,.;]|[.,](?=\d)){0,80})/i);
+      return m ? truncate(m[1], 64) : undefined;
     }
     case "source_gap":
     case "contradiction":
       return undefined;
   }
+}
+
+// Phase 6F: polish an extracted anchor phrase for display. Strips
+// unbalanced lead/trail punctuation left by the window regexes
+// ("other income)" → "other income"), and drops a doubled category
+// keyword head ("risk is a slowdown…" → "a slowdown…", which renders
+// as "Risk — a slowdown…" instead of "Risk — risk is a slowdown…").
+function cleanAnchor(s: string | undefined): string | undefined {
+  if (!s) return undefined;
+  let out = s.trim();
+  out = out.replace(/^(?:risk|catalyst|trigger)\s+(?:is|of)\s+/i, "");
+  out = out.replace(/^[()[\]{}"'.,;:\s—–-]+/, "");
+  out = out.replace(/[()[\]{}"'.,;:\s—–-]+$/, "");
+  out = out.replace(/\s{2,}/g, " ");
+  return out.length >= 3 ? out : undefined;
 }
 
 // Lift a short head phrase from the sentence — used as the absolute
@@ -865,19 +900,10 @@ function liftHead(text: string, max: number): string {
   return truncate(cleaned, max);
 }
 
-// Phase 6D: make the visible "why it matters" mention the specific
-// excerpt from the sentence, rather than repeating a static
-// category-level reason word-for-word across multiple flags in the
-// same category. The category-level reason stays as the prefix so the
-// framing remains consistent.
-function makeWhyItMatters(cat: CategoryKey, text: string): string {
-  const generic = CAT_WHY[cat];
-  const specific = labelSuffix(cat, text) || liftHead(text, 80);
-  if (!specific) return generic;
-  // Prepend the specific anchor in italics-style framing (rendered as
-  // plain text in the UI). The generic clause provides the rationale.
-  return `Specifically: "${specific}". ${generic}`;
-}
+// Phase 6F note: whyItMatters is the compact category-level reason
+// (CAT_WHY) used directly at the flag construction site. The Phase 6D
+// "Specifically: …" prefix duplicated the label (which already carries
+// the specific phrase) and tripled the visible text on the dashboard.
 
 function mapSentenceHeads(sentences: Sentence[], cap: number): string[] {
   const out: string[] = [];

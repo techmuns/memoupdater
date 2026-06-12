@@ -41,6 +41,7 @@ interface OpenAIOutputBlock {
 export interface OpenAIResponsePayload {
   status?: string;
   error?: { code?: string; message?: string } | null;
+  incomplete_details?: { reason?: string } | null;
   output?: OpenAIOutputBlock[];
   output_text?: string;
   usage?: { input_tokens?: number; output_tokens?: number };
@@ -57,6 +58,13 @@ export interface CallOpenAIResponsesArgs {
   toolChoice?: unknown;
   include?: string[];
   maxTokens?: number;
+  // Phase 6F: reasoning-effort hint for reasoning models (gpt-5.x / o*).
+  // On those models max_output_tokens covers reasoning tokens TOO, so an
+  // extraction call with default effort can burn most of its budget
+  // before emitting any JSON. Callers doing pure structured extraction
+  // should pass "low". Only attached to the request body when set —
+  // non-reasoning models reject the param.
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
   abortSignal?: AbortSignal;
   logEventTag?: string;
 }
@@ -114,6 +122,9 @@ export async function callOpenAIResponses(
     };
     if (typeof args.maxTokens === "number" && args.maxTokens > 0) {
       body.max_output_tokens = args.maxTokens;
+    }
+    if (args.reasoningEffort) {
+      body.reasoning = { effort: args.reasoningEffort };
     }
     if (args.tools && args.tools.length > 0) {
       body.tools = args.tools;
@@ -200,6 +211,25 @@ export async function callOpenAIResponses(
         ok: false,
         code: "llm_error",
         message: payload.error?.message ?? "Provider response failed",
+      };
+    }
+
+    // Phase 6F: status "incomplete" means the response was cut off —
+    // almost always reason "max_output_tokens". The output_text is a
+    // TRUNCATED JSON fragment. Previously this fell through to
+    // JSON.parse, failed there, and surfaced as a generic parse error;
+    // surfacing it explicitly (with the raw text for the extract/repair
+    // ladder) gives callers the right signal and the logs the right
+    // errorType to diagnose budget misconfigurations.
+    if (payload.status === "incomplete") {
+      const reason = payload.incomplete_details?.reason ?? "unknown";
+      logFailure(eventTag, args.model, `incomplete_${reason}`);
+      const truncated = extractOutputText(payload);
+      return {
+        ok: false,
+        code: "malformed_output",
+        message: `Provider output incomplete (${reason}) — likely max_output_tokens too small`,
+        rawText: truncated || undefined,
       };
     }
 

@@ -362,7 +362,9 @@ function SuccessSnapshot({
           className="mt-2 text-[12.5px] text-[var(--color-text-muted)] leading-relaxed"
           style={{ fontFamily: "var(--font-serif)" }}
         >
-          {understanding.summary.shortSummary}
+          {/* Phase 6F: hard display cap — baseline-recovered summaries
+              carry raw memo sentences; keep the card to ~2 lines. */}
+          {truncateText(understanding.summary.shortSummary, 220)}
         </p>
       )}
 
@@ -462,6 +464,14 @@ function SuccessSnapshot({
   );
 }
 
+// Phase 6F: ONE short context line per flag. The client asked for short
+// textual context — the earlier card stacked the full memo sentence plus
+// a "Specifically: …" rationale paragraph, tripling the text per row.
+// Now: specific label (bold) + category chip + importance badge + a
+// single truncated memo excerpt in quotes. Everything longer lives in
+// the data layer and the research prompts, not on screen.
+const FLAG_EXCERPT_MAX = 110;
+
 function FlagRow({ flag }: { flag: MemoUnderstandingFlaggedDetail }) {
   const Icon = CATEGORY_ICON[flag.category];
   const importanceTone =
@@ -470,16 +480,16 @@ function FlagRow({ flag }: { flag: MemoUnderstandingFlaggedDetail }) {
       : flag.importance === "high"
         ? "accent"
         : "neutral";
-  // Phase 6D: surface the SPECIFIC memo excerpt (flag.detail) as the
-  // visible description. flag.detail is a verbatim sentence from the
-  // memo (or the baseline's reconstructed excerpt), so each row reads
-  // distinctly even when several flags share a category. whyItMatters
-  // remains available as a subtler caption when present and distinct.
-  const detail = (flag.detail || flag.memoEvidence || "").trim();
-  const why = (flag.whyItMatters || "").trim();
-  const showWhy = why && !detail.toLowerCase().includes(why.slice(0, 40).toLowerCase());
+  const rawDetail = (flag.detail || flag.memoEvidence || "").trim();
+  // Skip the excerpt when it just repeats the label's specific phrase.
+  const labelSpecific = flag.label.split("—").pop()?.trim().toLowerCase() ?? "";
+  const redundant =
+    labelSpecific.length > 20 &&
+    rawDetail.toLowerCase().startsWith(labelSpecific.slice(0, 30));
+  const excerpt =
+    rawDetail && !redundant ? truncateText(rawDetail, FLAG_EXCERPT_MAX) : "";
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
       <div className="flex items-start gap-2">
         <Icon className="w-4 h-4 shrink-0 mt-0.5 text-[var(--color-ink)]" strokeWidth={1.75} />
         <div className="min-w-0 flex-1">
@@ -488,30 +498,28 @@ function FlagRow({ flag }: { flag: MemoUnderstandingFlaggedDetail }) {
               {flag.label}
             </span>
             <Badge tone={importanceTone}>{flag.importance}</Badge>
+            <span className="text-[9.5px] uppercase tracking-[0.06em] text-[var(--color-text-subtle)]">
+              {CATEGORY_LABEL[flag.category]}
+            </span>
           </div>
-          <div className="text-[10px] uppercase tracking-[0.06em] text-[var(--color-text-subtle)] mt-0.5">
-            {CATEGORY_LABEL[flag.category]}
-          </div>
-          {detail && (
+          {excerpt && (
             <p
-              className="text-[12px] text-[var(--color-text)] mt-1 leading-snug"
+              className="text-[11.5px] text-[var(--color-text-muted)] mt-0.5 leading-snug"
               style={{ fontFamily: "var(--font-serif)" }}
             >
-              <span className="text-[var(--color-text-subtle)]">
-                From the memo:
-              </span>{" "}
-              {detail}
-            </p>
-          )}
-          {showWhy && (
-            <p className="text-[11px] text-[var(--color-text-muted)] mt-1.5 leading-snug">
-              {why}
+              “{excerpt}”
             </p>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function truncateText(value: string, max: number): string {
+  const s = value.trim();
+  if (s.length <= max) return s;
+  return `${s.slice(0, Math.max(0, max - 1))}…`;
 }
 
 function Frame({ title, children }: { title: string; children: React.ReactNode }) {

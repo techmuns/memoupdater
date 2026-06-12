@@ -120,7 +120,7 @@ export function WorkspacePage() {
         const isGeneric = isGenericAnchor(anchor);
         const candidate = ((isGeneric ? t.question : anchor) || t.question)
           .trim()
-          .slice(0, 140);
+          .slice(0, 110);
         if (!candidate) continue;
         const dedupeKey = candidate.toLowerCase().slice(0, 60);
         if (seen.has(dedupeKey)) continue;
