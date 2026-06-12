@@ -1,17 +1,5 @@
-import type { CanonicalSectionId, MemoConfidence, MemoSectionSignal } from "@shared/types";
-
-// Phase 6B: 6 core + 3 supplementary; renderer splits on prefix.
-const CANONICAL_SECTION_IDS: readonly CanonicalSectionId[] = [
-  "sec_thesis_scorecard",
-  "sec_what_changed",
-  "sec_shareholding",
-  "sec_industry_regulatory",
-  "sec_corporate_events",
-  "sec_investment_action",
-  "sup_valuation_detail",
-  "sup_eps_bridge",
-  "sup_financials_actuals",
-] as const;
+import type { MemoConfidence, MemoSectionSignal } from "@shared/types";
+import { CANONICAL_SECTION_IDS } from "@shared/sectionIds";
 
 const SIGNAL_VALUES: MemoSectionSignal[] = [
   "positive",

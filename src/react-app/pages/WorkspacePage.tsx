@@ -169,6 +169,12 @@ export function WorkspacePage() {
 
   return (
     <div className="space-y-6">
+      {/* Phase 6H: stale-bundle banner. Shown when this tab's build id no
+          longer matches the deployed worker — a hard refresh clears the
+          class of "provider_error · 400" failures that a stale tab
+          produces against a newer backend. */}
+      {state.staleClient && <StaleClientBanner />}
+
       {/* Pre-upload intro — disappears once a file is loaded so the rest
           of the workflow rises above the fold. */}
       {showIntroHero && (
@@ -475,6 +481,37 @@ export function WorkspacePage() {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+// Phase 6H: persistent reload prompt when the browser bundle is stale.
+function StaleClientBanner() {
+  return (
+    <div
+      role="alert"
+      className="rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--color-warning)_30%,white)] bg-[var(--color-warning-soft)] px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+    >
+      <div className="flex items-start gap-3 min-w-0">
+        <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-[var(--color-warning)]" />
+        <div className="min-w-0">
+          <div className="text-[13.5px] font-semibold text-[var(--color-warning)]">
+            A newer version of the dashboard is available
+          </div>
+          <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed">
+            This tab is running an older build than the server. Reload to pick
+            up the latest version — it prevents generation errors caused by the
+            mismatch.
+          </p>
+        </div>
+      </div>
+      <Button
+        onClick={() => window.location.reload()}
+        leadingIcon={<RefreshCw className="w-4 h-4" />}
+        className="shrink-0"
+      >
+        Reload now
+      </Button>
     </div>
   );
 }

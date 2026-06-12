@@ -14,8 +14,54 @@ import type {
   ResearchPassResponse,
   ResearchUpdatesRequest,
   ResearchUpdatesResponse,
+  VersionResponse,
 } from "@shared/types";
 import { getLlmGateToken } from "./llmGateToken";
+
+// Phase 6H: a typed API error that PRESERVES the worker's response body.
+// The worker returns actionable detail on a 4xx (e.g.
+// `{ error: "invalid_request", message: "stale_client: sectionId is not
+// a canonical section id: sec_thesis_snapshot" }`). The old code threw
+// away the body and surfaced only "→ 400", so a stale-bundle bug looked
+// identical to a real backend failure. `staleClient` flags the specific
+// case so the UI can prompt a reload.
+export class ApiError extends Error {
+  readonly status: number;
+  readonly serverError?: string;
+  readonly serverMessage?: string;
+  readonly staleClient: boolean;
+  constructor(args: {
+    path: string;
+    status: number;
+    statusText: string;
+    serverError?: string;
+    serverMessage?: string;
+  }) {
+    const detail = args.serverMessage || args.serverError || args.statusText;
+    super(`${args.path} → ${args.status} ${detail}`);
+    this.name = "ApiError";
+    this.status = args.status;
+    this.serverError = args.serverError;
+    this.serverMessage = args.serverMessage;
+    this.staleClient =
+      typeof args.serverMessage === "string" &&
+      args.serverMessage.includes("stale_client");
+  }
+}
+
+async function readErrorBody(
+  res: Response,
+): Promise<{ error?: string; message?: string }> {
+  try {
+    const data = (await res.json()) as { error?: unknown; message?: unknown };
+    return {
+      error: typeof data.error === "string" ? data.error : undefined,
+      message: typeof data.message === "string" ? data.message : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
 
 async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -23,7 +69,14 @@ async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { Accept: "application/json", ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
-    throw new Error(`${path} → ${res.status} ${res.statusText}`);
+    const body = await readErrorBody(res);
+    throw new ApiError({
+      path,
+      status: res.status,
+      statusText: res.statusText,
+      serverError: body.error,
+      serverMessage: body.message,
+    });
   }
   return res.json() as Promise<T>;
 }
@@ -44,7 +97,14 @@ async function postJson<TResponse, TBody>(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`${path} → ${res.status} ${res.statusText}`);
+    const errBody = await readErrorBody(res);
+    throw new ApiError({
+      path,
+      status: res.status,
+      statusText: res.statusText,
+      serverError: errBody.error,
+      serverMessage: errBody.message,
+    });
   }
   return res.json() as Promise<TResponse>;
 }
@@ -61,6 +121,7 @@ function gateHeader(): Record<string, string> {
 
 export const api = {
   health: () => getJson<HealthResponse>("/api/health"),
+  version: () => getJson<VersionResponse>("/api/version"),
   demoProject: () => getJson<MemoProject>("/api/demo/project"),
   demoMemoDna: () => getJson<MemoDNA>("/api/demo/memo-dna"),
   demoFollowUpMemo: () => getJson<FollowUpMemo>("/api/demo/follow-up-memo"),

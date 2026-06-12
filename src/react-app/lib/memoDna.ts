@@ -258,6 +258,24 @@ export function detectCompanyFromTextDetailed(
   const safeText = typeof text === "string" ? text : "";
   const safeFilename = typeof filename === "string" ? filename : "";
 
+  // Phase 6H: filename-stem tokens. The uploaded filename almost always
+  // contains the company ("havells_note.pdf",
+  // "JM_Financial_…_Havells_India_…"). Candidates whose tokens appear in
+  // the stem get a strong boost — this is what tips "Havells" over a
+  // frequently-mentioned sub-brand like "Lloyd Consumer" on a results
+  // note. Broker tokens are stripped so the broker in the filename
+  // ("JM_Financial_…") can't boost itself.
+  const filenameStemTokens = new Set(
+    safeFilename
+      .replace(/\.[^.]+$/, "")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 3 && !FILENAME_GENERIC_STOPWORDS.has(t)),
+  );
+  for (const broker of BROKER_CANONICAL_TOKENS) {
+    for (const tok of broker) filenameStemTokens.delete(tok);
+  }
+
   const ticker = extractTicker(safeText);
 
   const cover = safeText.slice(0, COVER_CHAR_BUDGET);
@@ -287,18 +305,37 @@ export function detectCompanyFromTextDetailed(
     if (m[0]) phraseSet.add(m[0]);
     if (m[1]) phraseSet.add(m[1]);
   }
-  const candidates = Array.from(phraseSet).filter(
+  let candidates = Array.from(phraseSet).filter(
     (c) =>
       !isBrokerPhrase(c) &&
       !isGenericPhrase(c) &&
       !isNounFragment(c),
   );
+  // Phase 6H: drop trailing-fragment candidates. PDF flatten + the
+  // title-case regex produce "Travel Technologies Limited" as a tail of
+  // "RateGain Travel Technologies Limited" (the camelCase lead can't
+  // start a plain title-case match). When one candidate is a strict
+  // suffix of a longer one, the fragment is noise — keep only the
+  // longer, more specific phrase.
+  candidates = candidates.filter((c) => {
+    const cl = c.toLowerCase();
+    return !candidates.some(
+      (other) =>
+        other !== c && other.toLowerCase().endsWith(` ${cl}`),
+    );
+  });
 
   const tickerLine = ticker ? findTickerLine(safeText, ticker) : "";
 
   const scored = candidates
     .map((c) => {
-      const score = scoreCandidate(c, cover, body, tickerLine);
+      const score = scoreCandidate(
+        c,
+        cover,
+        body,
+        tickerLine,
+        filenameStemTokens,
+      );
       return { candidate: c, score };
     })
     .filter((s) => s.score > 0)
@@ -447,6 +484,35 @@ function isBrokerPhrase(candidate: string): boolean {
     const last = toks[toks.length - 1];
     if (BROKER_SUFFIX_TOKENS.has(last)) return true;
   }
+  // Phase 6H: corp-suffix-stripped check. A broker-firm name in a page
+  // footer carries a trailing corporate suffix ("…Securities Limited"),
+  // so the broker token isn't last. Strip a trailing Ltd/Limited/Inc/
+  // PLC/Corp and re-test the (now-last) token. "Financial Institutional
+  // Securities Limited" → "…Securities" → broker.
+  const CORP_SUFFIX = new Set(["limited", "ltd", "inc", "plc", "corp", "corporation"]);
+  if (toks.length >= 3 && toks.length <= 5 && CORP_SUFFIX.has(toks[toks.length - 1])) {
+    const beforeCorp = toks[toks.length - 2];
+    if (BROKER_SUFFIX_TOKENS.has(beforeCorp)) return true;
+  }
+  // Phase 6H: unambiguous multi-word broker-firm bigrams. These phrases
+  // identify a research house / intermediary, essentially never the
+  // memo SUBJECT — safe to exclude wherever they appear in the token run.
+  const BROKER_BIGRAMS: ReadonlyArray<readonly [string, string]> = [
+    ["institutional", "securities"],
+    ["institutional", "equities"],
+    ["capital", "markets"],
+    ["capital", "management"],
+    ["stock", "broking"],
+    ["wealth", "management"],
+    ["asset", "management"],
+    ["global", "research"],
+    ["securities", "limited"],
+  ];
+  for (let i = 0; i + 1 < toks.length; i++) {
+    for (const [a, b] of BROKER_BIGRAMS) {
+      if (toks[i] === a && toks[i + 1] === b) return true;
+    }
+  }
   return false;
 }
 
@@ -480,6 +546,7 @@ function scoreCandidate(
   cover: string,
   body: string,
   tickerLine: string,
+  filenameStemTokens: ReadonlySet<string>,
 ): number {
   const coverCount = countMatches(cover, candidate);
   const bodyCount = countMatches(body, candidate);
@@ -488,6 +555,14 @@ function scoreCandidate(
   let score = bodyCount * 2 + coverCount * 1;
 
   if (/\b(?:Ltd|Limited|Inc|India)\b/.test(candidate)) score += 2;
+
+  // Phase 6H: filename-stem agreement. Any candidate token that appears
+  // in the uploaded filename's stem is a strong signal it's the subject
+  // — enough to beat a high-frequency sub-brand on a results note.
+  if (filenameStemTokens.size > 0) {
+    const hit = tokenize(candidate).some((t) => filenameStemTokens.has(t));
+    if (hit) score += 6;
+  }
 
   // Reco-line proximity: scan for any window of 80 chars containing
   // BOTH the candidate and a reco token.

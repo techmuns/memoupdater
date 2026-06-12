@@ -58,6 +58,7 @@ import {
 } from "../lib/researchPasses";
 import { buildMemoUnderstandingDigest } from "../lib/memoUnderstandingSummary";
 import { getLlmGateToken } from "../lib/llmGateToken";
+import { APP_BUILD_ID } from "@shared/buildId";
 
 const GATE_TOKEN_POLL_KEY = "memo.llm.gate";
 
@@ -94,6 +95,10 @@ interface State {
   // test?" priorities textbox. Threaded into every research pass and
   // every memo section so the memo addresses what the user asked.
   userResearchPriorities: string;
+  // Phase 6H: true when this browser bundle's build id no longer matches
+  // the deployed worker's (a stale tab). Drives a reload banner so the
+  // user never hits cryptic "stale_client" 400s mid-generation.
+  staleClient: boolean;
 }
 
 type Action =
@@ -163,6 +168,7 @@ type Action =
     }
   | { type: "SET_SKIP_UNDERSTANDING"; value: boolean }
   | { type: "SET_USER_RESEARCH_PRIORITIES"; value: string }
+  | { type: "SET_STALE_CLIENT"; value: boolean }
   | { type: "RESET" };
 
 function buildInitialProgress(): MemoGenerationProgress {
@@ -211,6 +217,7 @@ const initialState: State = {
   understanding: { kind: "idle" },
   skipUnderstanding: false,
   userResearchPriorities: "",
+  staleClient: false,
 };
 
 function reducer(state: State, action: Action): State {
@@ -468,6 +475,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, skipUnderstanding: action.value };
     case "SET_USER_RESEARCH_PRIORITIES":
       return { ...state, userResearchPriorities: action.value };
+    case "SET_STALE_CLIENT":
+      return { ...state, staleClient: action.value };
     case "RESET":
       return {
         ...initialState,
@@ -479,6 +488,8 @@ function reducer(state: State, action: Action): State {
         understanding: { kind: "idle" },
         skipUnderstanding: false,
         userResearchPriorities: "",
+        // A stale browser bundle stays stale across "Start over".
+        staleClient: state.staleClient,
       };
   }
 }
@@ -532,6 +543,19 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       .catch(() =>
         dispatch({ type: "SET_LLM_PROVIDER_STATUS", status: null }),
       );
+    // Phase 6H: stale-bundle handshake. Compare this bundle's compiled-in
+    // build id against the deployed worker's. A mismatch means the tab
+    // is running old code against a new worker — surface a reload banner
+    // before the user hits a stale_client 400. "dev" (no Vite define,
+    // e.g. SSR/tests) never trips it.
+    api
+      .version()
+      .then((v) => {
+        if (APP_BUILD_ID !== "dev" && v.buildId !== APP_BUILD_ID) {
+          dispatch({ type: "SET_STALE_CLIENT", value: true });
+        }
+      })
+      .catch(() => {});
     dispatch({
       type: "SET_GATE_TOKEN_SET",
       value: Boolean(getLlmGateToken()),
@@ -988,6 +1012,13 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
 
       if (result.code === "aborted") {
         return;
+      }
+
+      // Phase 6H: a stale_client signal in the failure means this bundle
+      // POSTed an id the deployed worker no longer accepts — flip the
+      // reload banner instead of leaving a cryptic provider_error.
+      if (result.message.includes("stale_client")) {
+        dispatch({ type: "SET_STALE_CLIENT", value: true });
       }
 
       if (result.failedSectionId) {

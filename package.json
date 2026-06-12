@@ -14,7 +14,9 @@
     "cf-typegen": "wrangler types",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
-    "check": "tsc -b && vite build && wrangler deploy --dry-run"
+    "check": "tsc -b && vitest run && vite build && wrangler deploy --dry-run",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -43,6 +45,7 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.19.0",
     "vite": "^7.0.0",
+    "vitest": "^4.1.8",
     "wrangler": "^4.0.0"
   }
 }

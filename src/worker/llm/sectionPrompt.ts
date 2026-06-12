@@ -1,37 +1,16 @@
 import type {
-  CanonicalSectionId,
   GenerateMemoSectionRequest,
   MemoUnderstandingDigest,
 } from "@shared/types";
+import {
+  CANONICAL_SECTION_IDS,
+  CANONICAL_SECTION_TITLES,
+  type CanonicalSectionId,
+} from "@shared/sectionIds";
 
-// Phase 6B: restructured for client feedback (Jun 2026).
-// Core memo (6) — printed body, target <3 pages combined.
-// Supplementary (3) — collapsible drawers below the memo, for the
-// deeper valuation/EPS/financial math that would push the memo over
-// three pages.
-export const CANONICAL_SECTION_IDS: readonly CanonicalSectionId[] = [
-  "sec_thesis_scorecard",
-  "sec_what_changed",
-  "sec_shareholding",
-  "sec_industry_regulatory",
-  "sec_corporate_events",
-  "sec_investment_action",
-  "sup_valuation_detail",
-  "sup_eps_bridge",
-  "sup_financials_actuals",
-] as const;
-
-export const CANONICAL_SECTION_TITLES: Record<CanonicalSectionId, string> = {
-  sec_thesis_scorecard: "Memo vs Reality Scorecard",
-  sec_what_changed: "What Changed — Industry · Company · Financials",
-  sec_shareholding: "Shareholding & Ownership Changes",
-  sec_industry_regulatory: "Industry & Regulatory Developments",
-  sec_corporate_events: "Corporate Events (Last 12 Months)",
-  sec_investment_action: "Updated Investment View",
-  sup_valuation_detail: "Valuation Detail · Then vs Now",
-  sup_eps_bridge: "EPS Credibility Bridge",
-  sup_financials_actuals: "Memo Forecasts vs Reported Financials",
-};
+// Phase 6H: ids + titles come from the single shared source. Re-exported
+// here because parse.ts and index.ts import them from this module.
+export { CANONICAL_SECTION_IDS, CANONICAL_SECTION_TITLES };
 
 export interface BuildSectionPromptResult {
   system: string;

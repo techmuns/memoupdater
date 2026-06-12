@@ -159,27 +159,54 @@ const KEYWORDS: Record<CategoryKey, Keyword[]> = {
 // of 10% downside to 10% upside …" that defines the broker's rating
 // bands. These sentences score high on valuation_anchor keywords but
 // add zero thesis signal — filter them out before sentence selection.
-const DISCLAIMER_PATTERNS: RegExp[] = [
+//
+// Phase 6H: split into TWO tiers.
+//
+// RATING_DISCLAIMER — the broker's rating-band definitions ("HOLD: price
+// expected to move in the range of 10% downside to 10% upside…"). These
+// MUST be filtered before metadata extraction, otherwise the disclaimer's
+// leading "HOLD" / "10% upside" overrides the real "We maintain BUY" /
+// real target.
+//
+// NOISE — page footers, appendix pointers, analyst-certification lines,
+// "History of Recommendation" tables. These are noise for SUMMARY/FLAG
+// selection, but they must NOT gate metadata extraction: PDF flatten
+// frequently merges a page footer with the very line that carries the
+// target price ("…Securities Limited Page 1 … Price Target 1,750 …"),
+// so filtering the footer there would throw away the target too.
+const RATING_DISCLAIMER_PATTERNS: RegExp[] = [
   /price expected to move in the range/i,
   /\bfor stocks with market capitalisation\b/i,
   /\brating system\b/i,
   /\bratings? definitions?\b/i,
   /\binvestment ratings?\b.*\bdefin/i,
   /\bclassif(?:y|ication).*\bratings?\b/i,
+];
+
+const NOISE_PATTERNS: RegExp[] = [
   /\bplease see appendix\b/i,
   /\bimportant disclosures and disclaimers\b/i,
   /\bresearch analyst certification\b/i,
-  // Phase 6G.3: PDF page-footer fragments — "<Company> <Date> <Broker
-  // Limited> Page N" jammed together by the flatten step. They quote
-  // no thesis and just identify the doc, but they score well on
-  // valuation_anchor / management_claim keyword density when the
-  // broker name contains "Capital" or "Securities".
+  // PDF page-footer fragments — "<Company> <Date> <Broker Limited> Page N".
   /\bpage\s+\d+\b.*\b(?:limited|ltd|securities|capital|institutional)\b/i,
   /\b(?:limited|ltd|securities|capital|institutional)\b.*\bpage\s+\d+\b/i,
-  // History of Recommendation tables — useful as data but become a
-  // single mega-sentence after PDF flatten.
   /\bhistory of recommendation/i,
 ];
+
+// Combined set — used by the sentence segmenter + summary picker (drops
+// BOTH tiers so footers/disclaimers never become flags or summary lines).
+const DISCLAIMER_PATTERNS: RegExp[] = [
+  ...RATING_DISCLAIMER_PATTERNS,
+  ...NOISE_PATTERNS,
+];
+
+// Narrow filter for the metadata-extraction pass: rating disclaimers ONLY.
+function isRatingDisclaimerSentence(text: string): boolean {
+  for (const re of RATING_DISCLAIMER_PATTERNS) {
+    if (re.test(text)) return true;
+  }
+  return false;
+}
 
 // Phase 6F.2: "broker-template scaffolding" — header lines that
 // announce the rec/target/value framework without adding thesis
@@ -768,12 +795,14 @@ export function buildBaselineMemoUnderstanding(
   }
 
   // ---- Metadata ----
-  // Phase 6F.1: strip disclaimer/boilerplate sentences before regex
+  // Phase 6F.1 / 6H: strip ONLY rating-band disclaimers before regex
   // extraction so "HOLD Price expected to move in the range…" can't
-  // override "We rate Havells BUY".
+  // override "We rate Havells BUY". Page-footer / appendix NOISE is left
+  // in, because PDF flatten merges footers with the target-price line —
+  // dropping those chunks here would lose the target.
   const metadataText = text
     .split(/(?<=[.!?])\s+/)
-    .filter((s) => !isDisclaimerSentence(s))
+    .filter((s) => !isRatingDisclaimerSentence(s))
     .join(" ");
   const recommendation = extractRecommendation(metadataText);
   const targetPrice = extractTargetPrice(metadataText);

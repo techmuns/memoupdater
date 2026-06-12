@@ -32,8 +32,10 @@ import type {
   LlmGenerationErrorCode,
   LlmProviderName,
   LlmStatusResponse,
+  VersionResponse,
 } from "@shared/types";
 import type { LlmGenerationWarning } from "@shared/types";
+import { APP_BUILD_ID } from "@shared/buildId";
 import {
   checkGateToken,
   evaluateLlmReadiness,
@@ -48,10 +50,8 @@ import { trimRequestBody, trimRequestBodyCompact } from "./llm/trim";
 import { handleResearchUpdates } from "./research/route";
 import { handleResearchPass } from "./research/passRoute";
 import { handleMemoUnderstand } from "./memoUnderstanding/route";
-import {
-  CANONICAL_SECTION_IDS,
-  buildSectionPrompt,
-} from "./llm/sectionPrompt";
+import { buildSectionPrompt } from "./llm/sectionPrompt";
+import { isCanonicalSectionId } from "@shared/sectionIds";
 import { MEMO_SECTION_OPENAI_SCHEMA } from "./llm/sectionSchema";
 import { callOpenAIResponses } from "./llm/openai";
 import {
@@ -112,6 +112,15 @@ app.get("/api/health", (c) => {
     phase: "1-demo",
     timestamp: new Date().toISOString(),
   };
+  return c.json(body);
+});
+
+// Phase 6H: build-version handshake. The client polls this and compares
+// against its own compiled-in APP_BUILD_ID; a mismatch means the browser
+// is running a stale bundle against a newer worker — it shows a reload
+// banner instead of letting the user hit cryptic 400s.
+app.get("/api/version", (c) => {
+  const body: VersionResponse = { buildId: APP_BUILD_ID };
   return c.json(body);
 });
 
@@ -736,8 +745,14 @@ function validateGenerateSectionRequest(input: unknown): SectionValidationResult
   if (!isPlainObject(input)) return invalid("request must be an object");
   const sectionId = input.sectionId;
   if (typeof sectionId !== "string") return invalid("sectionId missing");
-  if (!(CANONICAL_SECTION_IDS as readonly string[]).includes(sectionId)) {
-    return invalid(`sectionId is not a canonical section id: ${sectionId}`);
+  if (!isCanonicalSectionId(sectionId)) {
+    // Phase 6H: this fires almost exclusively when a STALE browser bundle
+    // POSTs an old section id to a freshly-deployed worker. The
+    // `stale_client` marker lets the client special-case it (prompt a
+    // reload) instead of surfacing an opaque "provider_error · 400".
+    return invalid(
+      `stale_client: sectionId is not a canonical section id: ${sectionId}`,
+    );
   }
   const project = input.project;
   if (!isPlainObject(project)) return invalid("project missing");

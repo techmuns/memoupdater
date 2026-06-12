@@ -160,6 +160,13 @@ export interface HealthResponse {
   timestamp: string;
 }
 
+// Phase 6H: build-version handshake. The client compares its compiled-in
+// APP_BUILD_ID against this to detect a stale browser tab talking to a
+// freshly-deployed worker.
+export interface VersionResponse {
+  buildId: string;
+}
+
 // ---------- Phase 2 additions ----------
 
 export type MemoAnalysisMode = "demo" | "extracted";
@@ -576,30 +583,16 @@ export type LlmGenerationState =
 
 // ---------- Phase 5D additions: section-by-section memo generation ----------
 
-// Phase 6B: memo restructured for client feedback (June 2026).
-// The follow-up memo is now SIX core "sec_" sections (printed as the
-// <3-page memo) plus THREE "sup_" supplementary panels (rendered as
-// collapsible drawers BELOW the memo for the deep valuation/EPS/peer
-// math that would push the memo over three pages).
-// Worker schemas continue to expect nine canonical entries — the renderer
-// (MemoReview) splits on the id prefix.
-export type CanonicalSectionId =
-  // Core memo sections (rendered in the <3-page memo body)
-  | "sec_thesis_scorecard"
-  | "sec_what_changed"
-  | "sec_shareholding"
-  | "sec_industry_regulatory"
-  | "sec_corporate_events"
-  | "sec_investment_action"
-  // Supplementary panels (rendered as collapsible drawers below the memo)
-  | "sup_valuation_detail"
-  | "sup_eps_bridge"
-  | "sup_financials_actuals";
-
-// Helper: true if the section id belongs to the core <3-page memo body
-// (vs a supplementary drawer). Used by MemoReview to split rendering.
-export const CORE_MEMO_SECTION_PREFIX = "sec_";
-export const SUPPLEMENTARY_PANEL_PREFIX = "sup_";
+// Phase 6H: canonical section ids now live in a single module imported by
+// BOTH bundles (worker + client). Re-exported here so the many existing
+// `@shared/types` importers keep working unchanged. Do NOT re-introduce a
+// literal id list anywhere — import from @shared/sectionIds.
+import type { CanonicalSectionId } from "./sectionIds";
+export type { CanonicalSectionId };
+export {
+  CORE_MEMO_SECTION_PREFIX,
+  SUPPLEMENTARY_PANEL_PREFIX,
+} from "./sectionIds";
 
 export interface MemoSectionDigestEntry {
   id: CanonicalSectionId;

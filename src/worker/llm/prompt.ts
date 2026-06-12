@@ -4,31 +4,11 @@ import type {
   ResearchFindings,
 } from "@shared/types";
 
-// Phase 6B: rewritten for the 6-core + 3-supplementary memo structure.
-const CANONICAL_SECTION_IDS = [
-  "sec_thesis_scorecard",
-  "sec_what_changed",
-  "sec_shareholding",
-  "sec_industry_regulatory",
-  "sec_corporate_events",
-  "sec_investment_action",
-  "sup_valuation_detail",
-  "sup_eps_bridge",
-  "sup_financials_actuals",
-] as const;
-
-const CANONICAL_TITLES: Record<(typeof CANONICAL_SECTION_IDS)[number], string> =
-  {
-    sec_thesis_scorecard: "Memo vs Reality Scorecard",
-    sec_what_changed: "What Changed — Industry · Company · Financials",
-    sec_shareholding: "Shareholding & Ownership Changes",
-    sec_industry_regulatory: "Industry & Regulatory Developments",
-    sec_corporate_events: "Corporate Events (Last 12 Months)",
-    sec_investment_action: "Updated Investment View",
-    sup_valuation_detail: "Valuation Detail · Then vs Now",
-    sup_eps_bridge: "EPS Credibility Bridge",
-    sup_financials_actuals: "Memo Forecasts vs Reported Financials",
-  };
+// Phase 6H: ids + titles from the single shared source.
+import {
+  CANONICAL_SECTION_IDS,
+  CANONICAL_SECTION_TITLES as CANONICAL_TITLES,
+} from "@shared/sectionIds";
 
 export interface BuildPromptResult {
   system: string;

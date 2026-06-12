@@ -9,20 +9,11 @@ import type {
   MemoSectionSignal,
   SourceReference,
 } from "@shared/types";
-import { CANONICAL_SECTION_TITLES } from "./sectionPrompt";
-
-// Phase 6B: 6 core + 3 supplementary; renderer splits on prefix.
-const CANONICAL_SECTION_IDS = [
-  "sec_thesis_scorecard",
-  "sec_what_changed",
-  "sec_shareholding",
-  "sec_industry_regulatory",
-  "sec_corporate_events",
-  "sec_investment_action",
-  "sup_valuation_detail",
-  "sup_eps_bridge",
-  "sup_financials_actuals",
-] as const;
+import {
+  CANONICAL_SECTION_IDS,
+  CANONICAL_SECTION_TITLES,
+  isCanonicalSectionId,
+} from "@shared/sectionIds";
 
 const SIGNAL_VALUES: MemoSectionSignal[] = [
   "positive",
@@ -315,7 +306,7 @@ export function parseSectionJson(
     return fail("Section output is not an object");
   }
   const idVal = input.id;
-  if (typeof idVal !== "string" || !isCanonicalId(idVal)) {
+  if (typeof idVal !== "string" || !isCanonicalSectionId(idVal)) {
     return fail(`Section has unknown id: ${String(idVal)}`);
   }
   if (idVal !== expectedId) {
@@ -360,7 +351,7 @@ function parseSection(
   | { ok: true; section: MemoSection }
   | { ok: false; code: "malformed_output"; message: string } {
   const idVal = raw.id;
-  if (typeof idVal !== "string" || !isCanonicalId(idVal)) {
+  if (typeof idVal !== "string" || !isCanonicalSectionId(idVal)) {
     return fail(`Section ${index} has unknown id: ${String(idVal)}`);
   }
   const title = typeof raw.title === "string" ? raw.title : "";
@@ -437,11 +428,6 @@ function allowedDocumentIds(req: GenerateFollowUpMemoRequest): Set<string> {
   return set;
 }
 
-function isCanonicalId(
-  id: string,
-): id is (typeof CANONICAL_SECTION_IDS)[number] {
-  return (CANONICAL_SECTION_IDS as readonly string[]).includes(id);
-}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
