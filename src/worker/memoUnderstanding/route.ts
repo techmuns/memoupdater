@@ -32,7 +32,7 @@ import {
   evaluateLlmReadiness,
   getProviderName,
 } from "../llm/provider";
-import { callOpenAIResponses } from "../llm/openai";
+import { callOpenAIResponses, defaultReasoningEffort } from "../llm/openai";
 import { extractFirstJsonObject } from "../llm/jsonRepair";
 import { buildUnderstandPrompt } from "./prompt";
 import {
@@ -66,13 +66,6 @@ const UNDERSTAND_MAX_OUTPUT_TOKENS = 6_000;
 const UNDERSTAND_REPAIR_MAX_OUTPUT_TOKENS = 6_000;
 const UNDERSTAND_ULTRA_COMPACT_MAX_OUTPUT_TOKENS = 2_500;
 const GATE_HEADER = "x-memo-llm-gate";
-
-// Attach reasoning effort only for model families that accept the
-// `reasoning` param; other models reject unknown params with HTTP 400.
-function reasoningEffortForModel(model: string | undefined): "low" | undefined {
-  if (!model) return undefined;
-  return /^(gpt-5|o\d)/i.test(model) ? "low" : undefined;
-}
 
 export async function handleMemoUnderstand(
   c: Context<{ Bindings: Env }>,
@@ -204,7 +197,7 @@ export async function handleMemoUnderstand(
       schema: MEMO_UNDERSTANDING_OPENAI_SCHEMA,
       schemaName: MEMO_UNDERSTANDING_FORMAT_NAME,
       maxTokens: UNDERSTAND_MAX_OUTPUT_TOKENS,
-      reasoningEffort: reasoningEffortForModel(readiness.model),
+      reasoningEffort: defaultReasoningEffort(readiness.model),
       abortSignal: c.req.raw.signal,
       logEventTag: "llm_understand",
     });
@@ -338,7 +331,7 @@ async function tryRepair(
     schema: MEMO_UNDERSTANDING_OPENAI_SCHEMA,
     schemaName: MEMO_UNDERSTANDING_FORMAT_NAME,
     maxTokens: UNDERSTAND_REPAIR_MAX_OUTPUT_TOKENS,
-    reasoningEffort: reasoningEffortForModel(readiness.model),
+    reasoningEffort: defaultReasoningEffort(readiness.model),
     abortSignal: c.req.raw.signal,
     logEventTag: "llm_understand_repair",
   });
@@ -487,7 +480,7 @@ async function tryUltraCompact(
     schema: MEMO_UNDERSTANDING_ULTRA_COMPACT_OPENAI_SCHEMA,
     schemaName: MEMO_UNDERSTANDING_ULTRA_COMPACT_FORMAT_NAME,
     maxTokens: UNDERSTAND_ULTRA_COMPACT_MAX_OUTPUT_TOKENS,
-    reasoningEffort: reasoningEffortForModel(readiness.model),
+    reasoningEffort: defaultReasoningEffort(readiness.model),
     abortSignal: c.req.raw.signal,
     logEventTag: "llm_understand_ultra_compact",
   });

@@ -70,32 +70,43 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_OUTPUT_TOKENS = 5_000;
 const COMPACT_MAX_OUTPUT_TOKENS = 3_500;
 const HARD_MAX_OUTPUT_TOKENS = 12_000;
-// Phase 6B: per-section output budgets for the restructured memo.
-// Core sec_* sections are TIGHTER than Phase 5/6A to enforce the
-// <3-page memo budget. Supplementary sup_* panels get more headroom
-// because they carry the deeper bridges (valuation, EPS, financials).
-// Compact is the budget used on the orchestrator's retryCompact attempt.
+// Per-section output budgets for the restructured memo. These are CEILINGS,
+// not spend targets — a strict-json_schema response stops as soon as the
+// object is complete, so a completed section only bills what it generates.
+// On reasoning models (gpt-5.x) max_output_tokens ALSO covers hidden
+// reasoning tokens, so the ceiling must clear (visible JSON + low-effort
+// reasoning). The original 900–1,700 ceilings were sized for gpt-5.2 visible
+// output only; once reasoning was added to the budget they truncated
+// mid-JSON ("incomplete: max_output_tokens" → parse_error). Raised to match
+// the same fix already applied to the research (6,000) and understanding
+// (6,000) paths, scaled per section. Supplementary sup_* panels carry the
+// deeper bridges (valuation, EPS, financials) so they get the most headroom.
+// All stay well under HARD_MAX_OUTPUT_TOKENS (12,000).
 const SECTION_MAX_OUTPUT_TOKENS: Record<CanonicalSectionId, number> = {
-  sec_thesis_scorecard: 1_300,
-  sec_what_changed: 900,
-  sec_shareholding: 1_100,
-  sec_industry_regulatory: 900,
-  sec_corporate_events: 900,
-  sec_investment_action: 1_100,
-  sup_valuation_detail: 1_500,
-  sup_eps_bridge: 1_500,
-  sup_financials_actuals: 1_700,
+  sec_thesis_scorecard: 3_000,
+  sec_what_changed: 2_200,
+  sec_shareholding: 2_600,
+  sec_industry_regulatory: 2_200,
+  sec_corporate_events: 2_200,
+  sec_investment_action: 2_600,
+  sup_valuation_detail: 3_400,
+  sup_eps_bridge: 3_400,
+  sup_financials_actuals: 3_800,
 };
+// retryCompact attempt: the orchestrator re-POSTs with a TIGHTER INPUT
+// prompt, not a smaller wanted output — so these stay generous too (shrinking
+// the OUTPUT ceiling is what caused the truncation in the first place). Kept
+// modestly below the primary ceilings to reflect the leaner prompt.
 const SECTION_COMPACT_MAX_OUTPUT_TOKENS: Record<CanonicalSectionId, number> = {
-  sec_thesis_scorecard: 900,
-  sec_what_changed: 600,
-  sec_shareholding: 800,
-  sec_industry_regulatory: 600,
-  sec_corporate_events: 600,
-  sec_investment_action: 800,
-  sup_valuation_detail: 1_000,
-  sup_eps_bridge: 1_000,
-  sup_financials_actuals: 1_200,
+  sec_thesis_scorecard: 2_400,
+  sec_what_changed: 1_800,
+  sec_shareholding: 2_000,
+  sec_industry_regulatory: 1_800,
+  sec_corporate_events: 1_800,
+  sec_investment_action: 2_000,
+  sup_valuation_detail: 2_600,
+  sup_eps_bridge: 2_600,
+  sup_financials_actuals: 3_000,
 };
 const SECTION_FORMAT_NAME = "memo_section";
 // Phase 5C: pre-call auto-compact guard. If the default-trim assembled

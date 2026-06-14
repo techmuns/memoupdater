@@ -15,6 +15,28 @@ const MEMO_FORMAT_NAME = "follow_up_memo";
 // completion, and a 60s ceiling timed out the heaviest pass.
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+// Single source of truth for "is this a reasoning model?". On these families
+// (gpt-5.x, o1/o3/...) max_output_tokens is a SHARED budget for hidden
+// reasoning tokens + the visible response, and the `reasoning` request param
+// is accepted. Non-reasoning models reject `reasoning` with HTTP 400, so it
+// must be omitted for them. Previously this regex was copy-pasted into the
+// research and memo-understanding routes; the section path forgot it entirely
+// and truncated mid-JSON on gpt-5.5. Keep it here, import it everywhere.
+export function isReasoningModel(model: string | undefined): boolean {
+  return typeof model === "string" && /^(gpt-5|o\d)/i.test(model);
+}
+
+// Default reasoning effort for reasoning models when a caller does not pin
+// one. "low" keeps hidden reasoning small so structured-output calls don't
+// spend their token budget before emitting JSON (the exact failure that made
+// section generation return parse_error / "incomplete: max_output_tokens").
+// Returns undefined for non-reasoning models so the param is omitted.
+export function defaultReasoningEffort(
+  model: string | undefined,
+): "low" | undefined {
+  return isReasoningModel(model) ? "low" : undefined;
+}
+
 interface OpenAIAnnotation {
   type: string;
   url?: string;
@@ -135,8 +157,14 @@ export async function callOpenAIResponses(
     if (typeof args.maxTokens === "number" && args.maxTokens > 0) {
       body.max_output_tokens = args.maxTokens;
     }
-    if (args.reasoningEffort) {
-      body.reasoning = { effort: args.reasoningEffort };
+    // Bound hidden reasoning so it can't eat the whole max_output_tokens
+    // budget before the JSON is emitted. The caller may pin an effort; if it
+    // doesn't, reasoning models still get a safe "low" default and
+    // non-reasoning models get nothing (they reject the param). This is the
+    // guarantee that no call site can silently reintroduce the truncation bug.
+    const effort = args.reasoningEffort ?? defaultReasoningEffort(args.model);
+    if (effort) {
+      body.reasoning = { effort };
     }
     if (args.tools && args.tools.length > 0) {
       body.tools = args.tools;

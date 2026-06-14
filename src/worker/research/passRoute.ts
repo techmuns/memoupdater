@@ -20,7 +20,11 @@ import {
   evaluateLlmReadiness,
   getProviderName,
 } from "../llm/provider";
-import { callOpenAIResponses, harvestWebSources } from "../llm/openai";
+import {
+  callOpenAIResponses,
+  defaultReasoningEffort,
+  harvestWebSources,
+} from "../llm/openai";
 import {
   RESEARCH_PASS_IDS,
   buildResearchPassPrompt,
@@ -55,15 +59,6 @@ const PASS_COMPACT_MAX_OUTPUT_TOKENS = 3_500;
 const PASS_TIMEOUT_MS = 92_000;
 const PASS_COMPACT_TIMEOUT_MS = 85_000;
 const GATE_HEADER = "x-memo-llm-gate";
-
-// Attach reasoning effort only on model families that accept the
-// `reasoning` param; other models reject unknown params with HTTP 400.
-// "low" is the right setting for structured extraction with web search:
-// frees the budget for tool calls + JSON, cuts latency materially.
-function reasoningEffortForModel(model: string | undefined): "low" | undefined {
-  if (!model) return undefined;
-  return /^(gpt-5|o\d)/i.test(model) ? "low" : undefined;
-}
 
 const WEB_SEARCH_TOOL = { type: "web_search" } as const;
 const WEB_SEARCH_TOOL_CHOICE = { type: "web_search" } as const;
@@ -211,7 +206,7 @@ export async function handleResearchPass(
       include: [...PASS_INCLUDE],
       maxTokens,
       timeoutMs,
-      reasoningEffort: reasoningEffortForModel(readiness.model),
+      reasoningEffort: defaultReasoningEffort(readiness.model),
       abortSignal: c.req.raw.signal,
       logEventTag: "llm_research_pass",
     });

@@ -140,7 +140,12 @@ export type RunSectionRepairResult =
     };
 
 const REPAIR_INPUT_CHAR_BUDGET = 6_000;
-const REPAIR_MAX_OUTPUT_TOKENS = 1_500;
+// The repair re-emits the SAME full MemoSection schema, so its ceiling must
+// be at least as large as the biggest primary section ceiling — otherwise it
+// truncates exactly where the primary did and can never recover (the same
+// trap the memo-understanding repair tier hit at 1,600). Reasoning effort
+// defaults to "low" via callOpenAIResponses, so this is headroom, not spend.
+const REPAIR_MAX_OUTPUT_TOKENS = 4_000;
 
 export async function runSectionRepair(
   args: RunSectionRepairArgs,
