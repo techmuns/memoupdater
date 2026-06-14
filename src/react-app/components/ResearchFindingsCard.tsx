@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  Info,
 } from "lucide-react";
 import type {
   ResearchFinding,
@@ -14,7 +15,8 @@ import type {
 } from "@shared/types";
 import { Badge } from "./ui/Badge";
 import { Panel } from "./ui/Panel";
-import { buildResearchSummary } from "../lib/researchSummary";
+import { buildResearchSummary, type ResearchSummary } from "../lib/researchSummary";
+import { dedupeResearchNotes } from "../lib/researchNotes";
 
 const IMPACT_TONE: Record<ResearchFindingImpact, "success" | "warning" | "neutral" | "accent"> = {
   positive: "success",
@@ -56,7 +58,11 @@ interface ResearchFindingsCardProps {
 
 export function ResearchFindingsCard({ research }: ResearchFindingsCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const summary = buildResearchSummary(research);
+  // Per-pass process caveats (period mapping, source access, scope). Merged
+  // across six passes they repeat; collapse near-duplicates for display.
+  const methodNotes = dedupeResearchNotes(research.warnings);
   return (
     <Panel
       eyebrow="Research findings"
@@ -78,26 +84,17 @@ export function ResearchFindingsCard({ research }: ResearchFindingsCardProps) {
           <span className="font-semibold">{summary.watch}</span> watch
         </span>
         <span>
-          <span className="font-semibold">{summary.unresolved}</span> unresolved
-        </span>
-        {summary.warnings > 0 && (
-          <span>
-            <span className="text-[var(--color-warning)] font-semibold">{summary.warnings}</span> warning{summary.warnings === 1 ? "" : "s"}
-          </span>
-        )}
-        <span>
           <span className="font-semibold">{summary.verifiedSourceFindings}</span>/{summary.findings} web-verified
         </span>
-        {(summary.checkpointsSupported + summary.checkpointsChallenged + summary.checkpointsNoUpdate) > 0 && (
-          <span>
-            checkpoints: {summary.checkpointsSupported}✓ · {summary.checkpointsChallenged}✗ · {summary.checkpointsNoUpdate}=
-          </span>
-        )}
       </div>
+
+      {/* One-glance critical takeaway — the only thing most clients need. */}
+      <CriticalSignals summary={summary} />
+
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--color-ink)] hover:underline"
+        className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--color-ink)] hover:underline"
       >
         {expanded ? (
           <ChevronDown className="w-3.5 h-3.5" />
@@ -144,12 +141,16 @@ export function ResearchFindingsCard({ research }: ResearchFindingsCardProps) {
 
           {research.unresolvedQuestions.length > 0 && (
             <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
-              <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-subtle)] mb-1">
-                Unresolved questions
+              <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">
+                Open items to verify
               </div>
+              <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 mb-1.5 leading-snug">
+                Data points the research could not confirm. Verify manually only
+                if material to your decision.
+              </p>
               <ul className="list-disc pl-5 space-y-1">
                 {research.unresolvedQuestions.map((q, i) => (
-                  <li key={i} className="text-[12px] text-[var(--color-text)]">
+                  <li key={i} className="text-[12px] text-[var(--color-text)] leading-snug">
                     {q}
                   </li>
                 ))}
@@ -157,22 +158,90 @@ export function ResearchFindingsCard({ research }: ResearchFindingsCardProps) {
             </div>
           )}
 
-          {research.warnings.length > 0 && (
-            <ul className="mt-4 space-y-1.5">
-              {research.warnings.map((w, i) => (
-                <li
-                  key={i}
-                  className="text-[11.5px] text-[var(--color-warning)] inline-flex items-start gap-1.5 leading-snug"
-                >
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>{w}</span>
-                </li>
-              ))}
-            </ul>
+          {/* Research method notes — informational diagnostics about HOW the
+              data was gathered (source access, period mapping, scope). Not
+              company signal, so collapsed and muted with no alarm styling. */}
+          {methodNotes.length > 0 && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setNotesOpen((v) => !v)}
+                className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+              >
+                {notesOpen ? (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5" />
+                )}
+                Research method notes ({methodNotes.length})
+              </button>
+              {notesOpen && (
+                <div className="mt-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5">
+                  <p className="text-[11px] text-[var(--color-text-muted)] mb-1.5 leading-snug">
+                    How the data was gathered — source access, period mapping,
+                    and per-pass scope. Informational; no action needed.
+                  </p>
+                  <ul className="space-y-1.5">
+                    {methodNotes.map((w, i) => (
+                      <li
+                        key={i}
+                        className="text-[11px] text-[var(--color-text-muted)] inline-flex items-start gap-1.5 leading-snug"
+                      >
+                        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[var(--color-text-subtle)]" />
+                        <span>{w}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
     </Panel>
+  );
+}
+
+// Surfaces ONLY the thesis-relevant takeaway: challenged checkpoints and
+// negative developments. Everything else (method caveats, source access,
+// period assumptions) is intentionally not raised here.
+function CriticalSignals({ summary }: { summary: ResearchSummary }) {
+  const items: string[] = [];
+  if (summary.checkpointsChallenged > 0) {
+    items.push(
+      `${summary.checkpointsChallenged} thesis checkpoint${summary.checkpointsChallenged === 1 ? "" : "s"} challenged`,
+    );
+  }
+  if (summary.negative > 0) {
+    items.push(
+      `${summary.negative} negative development${summary.negative === 1 ? "" : "s"}`,
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 inline-flex items-start gap-2">
+        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[var(--color-success)]" />
+        <span className="text-[12px] text-[var(--color-text)] leading-snug">
+          No thesis-challenging developments found in this research window.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-warning)_22%,white)] bg-[var(--color-warning-soft)] px-3 py-2 flex items-start gap-2">
+      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[var(--color-warning)]" />
+      <span className="text-[12px] text-[var(--color-text)] leading-snug">
+        <span className="font-semibold text-[var(--color-warning)]">
+          Needs attention:
+        </span>{" "}
+        {items.join(" · ")}.{" "}
+        <span className="text-[var(--color-text-muted)]">
+          See thesis checkpoints and findings below.
+        </span>
+      </span>
+    </div>
   );
 }
 
