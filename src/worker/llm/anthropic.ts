@@ -61,9 +61,10 @@ export function createAnthropicProvider(
             signal,
           });
         } catch (err) {
-          const aborted = signal.aborted;
-          const timeout = isTimeoutError(err);
-          if (aborted) {
+          if (signal.aborted) {
+            // Classify off the abort reason (deterministic) rather than the
+            // thrown value — see openai.ts for the rationale.
+            const timeout = isTimeoutError(signal.reason) || isTimeoutError(err);
             logFailure(model, timeout ? "timeout" : "abort");
             return {
               ok: false,
@@ -75,11 +76,12 @@ export function createAnthropicProvider(
               modelUsed: model,
             };
           }
+          // Never echo raw network/runtime error text back to the client.
           logFailure(model, "network");
           return {
             ok: false,
             code: "llm_error",
-            message: err instanceof Error ? err.message : "Network error",
+            message: "Provider network error",
             providerName: "anthropic",
             modelUsed: model,
           };

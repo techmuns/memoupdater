@@ -30,6 +30,11 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_OUTPUT_TOKENS = 12_000;
 const HARD_MAX_OUTPUT_TOKENS = 12_000;
 const GATE_HEADER = "x-memo-llm-gate";
+// This one-shot route drives web_search and asks for 6–10 findings — heavier
+// than a single research pass, which already needed > 60s (see passRoute.ts).
+// Without an override callOpenAIResponses would use the 60s default and time
+// out before the search round-trips complete.
+const RESEARCH_TIMEOUT_MS = 120_000;
 
 const WEB_SEARCH_TOOL = { type: "web_search" } as const;
 // Forces the model to actually invoke web_search instead of choosing not
@@ -171,6 +176,7 @@ export async function handleResearchUpdates(
       toolChoice: WEB_SEARCH_TOOL_CHOICE,
       include: [...RESEARCH_INCLUDE],
       maxTokens,
+      timeoutMs: RESEARCH_TIMEOUT_MS,
       abortSignal: c.req.raw.signal,
       logEventTag: "llm_research",
     });

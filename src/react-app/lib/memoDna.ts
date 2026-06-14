@@ -593,12 +593,16 @@ function scoreCandidate(
   return score;
 }
 
+// Ordered most-reliable first: extractTicker returns the FIRST pattern that
+// matches anywhere in the text, so the high-confidence labeled forms must be
+// tried before the ambiguous bare "<WORD> IN" Bloomberg code — otherwise a
+// caps phrase like "STRONG GROWTH IN INDIA" wins over a real "Ticker: RELI".
 const TICKER_PATTERNS: readonly RegExp[] = [
   /\bNSE\s*[:-]\s*([A-Z][A-Z0-9&-]{1,11})\b/,
   /\bBSE\s*[:-]\s*([A-Z0-9][A-Z0-9&-]{1,11})\b/,
+  /\b(?:Ticker|Symbol|BSE\s*Code|NSE\s*Code|Code)\s*[:-]\s*([A-Z0-9&-]{2,12})\b/i,
   /\b([A-Z]{2,10})\s+IN\s+Equity\b/,
   /\b([A-Z]{2,10})\s+IN\b/,
-  /\b(?:Ticker|Symbol|BSE\s*Code|NSE\s*Code|Code)\s*[:-]\s*([A-Z0-9&-]{2,12})\b/i,
 ];
 
 function extractTicker(text: string): string | undefined {
@@ -615,9 +619,14 @@ function extractTicker(text: string): string | undefined {
 
 function findTickerLine(text: string, ticker: string): string {
   if (!ticker) return "";
+  // Token-boundary match so a short ticker (e.g. "ITC", "TCS") doesn't match
+  // inside an unrelated word (e.g. "PROFITC"). Lookarounds (not \b) so tickers
+  // ending in "&"/"-" still bound correctly.
+  const escaped = ticker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`);
   const lines = text.split(/\n/);
   for (const ln of lines) {
-    if (ln.includes(ticker)) return ln;
+    if (re.test(ln)) return ln;
   }
   return "";
 }

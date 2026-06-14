@@ -18,6 +18,7 @@ import type {
   ThesisCheckpoint,
 } from "@shared/types";
 import { selectTasksForPass } from "./memoUnderstandingSummary";
+import { periodLabel } from "./periodDetect";
 
 export const RESEARCH_PASS_IDS: readonly ResearchPassId[] = [
   "official_results",
@@ -618,13 +619,10 @@ export function detectionToResearchDetectionInput(
 ): ResearchDetectionInput {
   return {
     detectedCompany: detection?.detectedCompany ?? companyName,
-    periodLabel: detection?.best
-      ? (detection.best.fiscalYearLabel ??
-        detection.best.monthLabel ??
-        detection.best.isoMonth ??
-        detection.best.isoDate ??
-        detection.best.rawMatch)
-      : "",
+    // Use the canonical helper so a quarter_fy period renders as "Q3 FY25",
+    // not just "FY25" — the old fallback chain short-circuited on
+    // fiscalYearLabel and silently dropped the quarter.
+    periodLabel: detection?.best ? periodLabel(detection.best) : "",
     researchStart: detection?.researchStart,
     researchCurrent:
       detection?.researchCurrent ?? new Date().toISOString().slice(0, 7),

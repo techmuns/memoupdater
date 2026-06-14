@@ -171,7 +171,6 @@ const TIER_RULES: Record<SourceTier, TierRules> = {
       "tickertape.in",
       "simplywall.st",
       "stockanalysis.com",
-      "wsj.com/market-data",
       "morningstar.com",
     ],
   },

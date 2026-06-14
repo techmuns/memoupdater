@@ -188,9 +188,11 @@ export async function callOpenAIResponses(
         signal,
       });
     } catch (err) {
-      const aborted = signal.aborted;
-      const timeout = isTimeoutError(err);
-      if (aborted) {
+      if (signal.aborted) {
+        // Classify off the abort *reason* (deterministic) rather than the
+        // thrown value — some runtimes reject an aborted fetch with a generic
+        // AbortError regardless of the reason we passed to abort().
+        const timeout = isTimeoutError(signal.reason) || isTimeoutError(err);
         logFailure(eventTag, args.model, timeout ? "timeout" : "abort");
         return {
           ok: false,
@@ -200,11 +202,12 @@ export async function callOpenAIResponses(
             : "LLM request was aborted",
         };
       }
+      // Never echo raw network/runtime error text back to the client.
       logFailure(eventTag, args.model, "network");
       return {
         ok: false,
         code: "llm_error",
-        message: err instanceof Error ? err.message : "Network error",
+        message: "Provider network error",
       };
     }
 
@@ -264,6 +267,16 @@ export async function callOpenAIResponses(
     if (payload.status === "incomplete") {
       const reason = payload.incomplete_details?.reason ?? "unknown";
       logFailure(eventTag, args.model, `incomplete_${reason}`);
+      // A content-filter stop is NOT a budget problem — don't emit the
+      // misleading "max_output_tokens too small" diagnostic for it, and don't
+      // hand its (empty) fragment to the repair ladder.
+      if (reason === "content_filter") {
+        return {
+          ok: false,
+          code: "malformed_output",
+          message: "Provider stopped the response on a content filter",
+        };
+      }
       const truncated = extractOutputText(payload);
       return {
         ok: false,

@@ -56,5 +56,7 @@ export function normalizeStockSearchResults(raw: unknown): StockSearchResult[] {
 // fall back to the number of rows we actually parsed.
 export function extractStockSearchTotal(raw: unknown, fallback: number): number {
   const total = (raw as RawStockSearchUpstream | null)?.data?.total_results;
-  return typeof total === "number" && Number.isFinite(total) ? total : fallback;
+  return typeof total === "number" && Number.isFinite(total) && total >= 0
+    ? total
+    : fallback;
 }

@@ -215,7 +215,11 @@ export function detectSector(text: string): string | undefined {
   for (const s of SECTOR_KEYWORDS) {
     let score = 0;
     for (const p of s.patterns) {
-      const matches = text.match(p);
+      // The sector patterns have no `g` flag, so a plain match() returns only
+      // the first hit (length 1). Count every occurrence so a strongly-themed
+      // memo actually outscores one with a single stray keyword.
+      const g = p.global ? p : new RegExp(p.source, p.flags + "g");
+      const matches = text.match(g);
       if (matches) score += matches.length;
     }
     if (score > 0) scores.push({ sector: s.sector, score });

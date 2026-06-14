@@ -382,11 +382,15 @@ function parseSection(
 }
 
 function parseSignal(value: unknown): MemoSectionSignal {
-  if (
-    typeof value === "string" &&
-    (SIGNAL_VALUES as string[]).includes(value)
-  ) {
-    return value as MemoSectionSignal;
+  // Tolerate casing/whitespace like parseConfidence — the extract/repair and
+  // Anthropic tool paths can feed raw values that the strict OpenAI enum would
+  // otherwise have normalized, and a stray "Positive" must not silently
+  // downgrade the section to "neutral".
+  if (typeof value === "string") {
+    const lower = value.trim().toLowerCase();
+    if ((SIGNAL_VALUES as string[]).includes(lower)) {
+      return lower as MemoSectionSignal;
+    }
   }
   return "neutral";
 }
@@ -411,8 +415,18 @@ function parseSources(
       continue;
     }
     const ref: SourceReference = { documentId: docId };
-    if (typeof item.page === "number") ref.page = item.page;
-    if (typeof item.quote === "string") ref.quote = item.quote;
+    // Only accept a sane page number — a model can emit 0, a negative, or a
+    // float, which would render as "p. 0" / "p. -3" / "p. 1.5".
+    if (
+      typeof item.page === "number" &&
+      Number.isInteger(item.page) &&
+      item.page > 0
+    ) {
+      ref.page = item.page;
+    }
+    if (typeof item.quote === "string" && item.quote.trim()) {
+      ref.quote = item.quote.trim();
+    }
     out.push(ref);
   }
   return out;

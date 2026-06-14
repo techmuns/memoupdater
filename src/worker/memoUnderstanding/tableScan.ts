@@ -48,7 +48,11 @@ interface Token {
 const PERIOD_RE =
   /(?:Q[1-4]\s?FY\s?\d{2,4}|[1-4]Q\s?FY\s?\d{2,4}|FY\s?\d{2,4})(?:[AE])?\b/y;
 // Numbers: 44,006 · 1,85,499 (Indian grouping) · 9.8% · (877) · -10.2% · 20.3
-const NUM_RE = /\(?-?\d{1,3}(?:,\d{2,3})*(?:\.\d+)?\)?%?/y;
+// · (8.0%) — a parenthesized negative percentage: the % may sit INSIDE the
+// closing paren, so accept an optional % before AND after ")". Without the
+// inner %?, "(8.0%)" tokenized as "(8.0%" (dropping ")"), and looseNumber
+// then lost the negative sign because the paren pair was broken.
+const NUM_RE = /\(?-?\d{1,3}(?:,\d{2,3})*(?:\.\d+)?%?\)?%?/y;
 // Words: letters plus the punctuation that appears inside row labels.
 const WORD_RE = /[A-Za-z&][A-Za-z&().'/%-]*/y;
 

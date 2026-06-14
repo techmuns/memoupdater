@@ -18,11 +18,17 @@ const BRACKETED_ID_REF = new RegExp(
   String.raw`\s*[(\[]\s*(?:see\s+|per\s+|from\s+|findings?\s+|sources?\s+)?${ID_TOKEN}(?:\s*(?:,|;|&|and)\s*(?:findings?\s+)?${ID_TOKEN})*\s*[)\]]`,
   "g",
 );
-// "finding r01", "research findings r01 and r03", "sources r02, r04"
+// "finding r01", "Research findings r01 and r03", "Sources r02, r04".
+// Case-insensitive so a sentence-initial "Sources"/"Findings" is rewritten
+// as a phrase too — otherwise the leading word was left orphaned ("Sources,
+// confirm this.") while BARE_ID stripped its ids. The id TOKEN itself is
+// still effectively lowercase (every id this app emits is lowercase).
 const ID_PHRASE = new RegExp(
   String.raw`\b(?:research\s+)?(?:findings?|sources?)\s+${ID_TOKEN}(?:\s*(?:,|and)\s*${ID_TOKEN})*`,
-  "g",
+  "gi",
 );
+// Kept lowercase-only on purpose (see header note): uppercase finance tokens
+// like FY26 / F2026 / F26 must never be stripped.
 const LOCAL_INITIAL = /\blocal_initial_\d+\b/g;
 const BARE_ID = /\b[rf]\d{2}\b/g;
 
@@ -30,12 +36,27 @@ export function sanitizeMemoTextForDisplay(text: string): string {
   if (typeof text !== "string" || text.length === 0) return text;
   let out = text;
   out = out.replace(BRACKETED_ID_REF, "");
-  out = out.replace(ID_PHRASE, (match) =>
-    /sources?/.test(match) ? "the cited sources" : "the cited evidence",
-  );
+  out = out.replace(ID_PHRASE, (match) => {
+    const phrase = /sources?/i.test(match)
+      ? "the cited sources"
+      : "the cited evidence";
+    // Preserve sentence-initial capitalization of the removed phrase.
+    return /^[A-Z]/.test(match)
+      ? phrase[0].toUpperCase() + phrase.slice(1)
+      : phrase;
+  });
   out = out.replace(LOCAL_INITIAL, "the original memo");
   out = out.replace(BARE_ID, "");
-  // Cleanup artifacts left by removals.
+  // Cleanup artifacts left by removing ids from prose.
+  // dangling list glue ("and"/"&") before punctuation or a closing bracket
+  out = out.replace(/\s+(?:and|&)\b(?=\s*(?:[.,;:!?)\]]|$))/gi, "");
+  // collapse orphaned comma runs ("a, , b") into a single comma
+  out = out.replace(/,(?:\s*,)+/g, ",");
+  // orphaned comma right after a label/opening bracket ("Catalysts: ," / "(,")
+  out = out.replace(/([:;([])\s*,\s*/g, "$1 ");
+  // orphaned comma right before sentence punctuation or a closing bracket
+  out = out.replace(/\s*,\s*(?=[.;:!?)\]])/g, "");
+  // empty brackets left behind
   out = out.replace(/\(\s*\)|\[\s*\]/g, "");
   out = out.replace(/[ \t]{2,}/g, " ");
   out = out.replace(/\s+([,.;:!?])/g, "$1");

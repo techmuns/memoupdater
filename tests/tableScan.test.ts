@@ -42,3 +42,24 @@ describe("table scanner — Havells quarterly tables", () => {
     expect(dump).toContain("55,734");
   });
 });
+
+// Phase 6I: a parenthesized negative percentage "(8.0%)" must tokenize whole
+// (with its closing paren) — previously NUM_RE dropped the ")" and the value
+// rendered as "(8.0%", losing the negative sign for delta math.
+describe("table scanner — parenthesized negative percentages", () => {
+  const synthetic = [
+    "(INR mn) Q3FY24 Q4FY24 FY24 Q3FY25",
+    "Net Revenue 100 110 420 95",
+    "Net Revenue YoY 5.0% 6.0% 10.0% (8.0%)",
+  ].join("\n");
+
+  it("captures '(8.0%)' verbatim, not the truncated '(8.0%'", () => {
+    const rows = scanTables(synthetic);
+    const dump = JSON.stringify(rows);
+    expect(dump).toContain("(8.0%)");
+    // The broken token would have left a dangling, paren-less fragment.
+    expect(rows.some((r) => r.value === "(8.0%")).toBe(false);
+    const yoy = rows.find((r) => /yoy/i.test(r.label));
+    expect(yoy?.value).toBe("(8.0%)");
+  });
+});

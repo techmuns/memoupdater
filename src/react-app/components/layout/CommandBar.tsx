@@ -12,7 +12,7 @@ import { deriveCommandBarValues } from "./commandBarState";
 
 export function CommandBar() {
   const navigate = useNavigate();
-  const { state } = useMemoProject();
+  const { state, startOver } = useMemoProject();
   const { projectLabel, trailingTicker, stageLabel, stageTone } =
     deriveCommandBarValues({
       selectedCompany: state.selectedCompany
@@ -78,7 +78,13 @@ export function CommandBar() {
           <Button
             size="sm"
             leadingIcon={<Plus className="w-3.5 h-3.5" />}
-            onClick={() => navigate("/intake")}
+            onClick={() => {
+              // Actually start a NEW memo: clear all project state, then land
+              // on the workspace. (Navigating to /intake alone just redirects
+              // to /workspace with the previous memo still loaded.)
+              startOver();
+              navigate("/workspace");
+            }}
           >
             New Memo Update
           </Button>

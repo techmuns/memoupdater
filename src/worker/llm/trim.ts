@@ -35,7 +35,10 @@ const COMPACT_MAX_WARNINGS = 6;
 // head + tail elision preserves more useful context than a single head trim.
 export function trimToCharBudget(text: string, charBudget: number): string {
   if (text.length <= charBudget) return text;
-  const usable = Math.max(charBudget - ELISION.length, 0);
+  // Budget too small to even hold the elision marker: hard head-cut so the
+  // result still respects charBudget (returning ELISION alone would overshoot).
+  if (charBudget <= ELISION.length) return text.slice(0, Math.max(charBudget, 0));
+  const usable = charBudget - ELISION.length;
   const headLen = Math.floor(usable * 0.7);
   const tailLen = usable - headLen;
   return text.slice(0, headLen) + ELISION + text.slice(text.length - tailLen);

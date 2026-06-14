@@ -33,59 +33,66 @@ export async function extractPdfText(file: File): Promise<ExtractionResult> {
     pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
     const loadingTask = pdfjs.getDocument({ data: buf });
-    const doc = (await loadingTask.promise) as unknown as PdfDocument;
+    try {
+      const doc = (await loadingTask.promise) as unknown as PdfDocument;
 
-    const totalPages = doc.numPages;
-    const pagesToRead = Math.min(totalPages, MAX_PAGES);
-    if (totalPages > MAX_PAGES) {
-      warnings.push(
-        `PDF has ${totalPages} pages; Phase 2 only reads the first ${MAX_PAGES}.`,
-      );
-    }
+      const totalPages = doc.numPages;
+      const pagesToRead = Math.min(totalPages, MAX_PAGES);
+      if (totalPages > MAX_PAGES) {
+        warnings.push(
+          `PDF has ${totalPages} pages; Phase 2 only reads the first ${MAX_PAGES}.`,
+        );
+      }
 
-    const pageChunks: string[] = [];
-    for (let i = 1; i <= pagesToRead; i++) {
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => (typeof item.str === "string" ? item.str : ""))
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
-      pageChunks.push(pageText);
-    }
+      const pageChunks: string[] = [];
+      for (let i = 1; i <= pagesToRead; i++) {
+        const page = await doc.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items
+          .map((item) => (typeof item.str === "string" ? item.str : ""))
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+        pageChunks.push(pageText);
+      }
 
-    const text = pageChunks.join("\n\n").trim();
+      const text = pageChunks.join("\n\n").trim();
 
-    if (text.length === 0) {
+      if (text.length === 0) {
+        return {
+          status: "unsupported",
+          text: "",
+          characterCount: 0,
+          wordCount: 0,
+          pageCount: totalPages,
+          warnings: [
+            ...warnings,
+            "PDF returned no extractable text — likely a scanned / image-only document. OCR is not supported in Phase 2.",
+          ],
+          source: sourceFor(file),
+          extractedAt: new Date().toISOString(),
+        };
+      }
+
+      const status: ExtractionResult["status"] =
+        warnings.length > 0 ? "partial" : "success";
+
       return {
-        status: "unsupported",
-        text: "",
-        characterCount: 0,
-        wordCount: 0,
+        status,
+        text,
+        characterCount: characterCount(text),
+        wordCount: wordCount(text),
         pageCount: totalPages,
-        warnings: [
-          ...warnings,
-          "PDF returned no extractable text — likely a scanned / image-only document. OCR is not supported in Phase 2.",
-        ],
+        warnings,
         source: sourceFor(file),
         extractedAt: new Date().toISOString(),
       };
+    } finally {
+      // Release the pdf.js worker-side document + the page buffers on every
+      // exit path (success, empty-text return, or a throw) so repeated
+      // uploads don't accumulate detached documents in the worker.
+      await loadingTask.destroy();
     }
-
-    const status: ExtractionResult["status"] =
-      warnings.length > 0 ? "partial" : "success";
-
-    return {
-      status,
-      text,
-      characterCount: characterCount(text),
-      wordCount: wordCount(text),
-      pageCount: totalPages,
-      warnings,
-      source: sourceFor(file),
-      extractedAt: new Date().toISOString(),
-    };
   } catch (err) {
     return {
       status: "error",

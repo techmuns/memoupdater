@@ -841,7 +841,22 @@ export function buildBaselineMemoUnderstanding(
   if (topFinSentence && topFinSentence.start !== topValSentence?.start) {
     shortSummaryParts.push(truncate(topFinSentence.text, 200));
   }
-  const shortSummary = truncate(shortSummaryParts.join(" "), 300);
+  // A memo dominated by risk/segment language (or a very short one) can have
+  // no valuation_anchor / financial_claim sentence at all. Fall back through
+  // the next most thesis-bearing categories, then the one-line summary, so
+  // shortSummary / detailedThesis are never blank.
+  if (shortSummaryParts.length === 0) {
+    const fallbackSentence =
+      topRiskSentence ??
+      pickTop("segment_driver") ??
+      pickTop("margin_driver") ??
+      pickTop("catalyst");
+    if (fallbackSentence) {
+      shortSummaryParts.push(truncate(fallbackSentence.text, 200));
+    }
+  }
+  const shortSummary =
+    truncate(shortSummaryParts.join(" "), 300) || oneLineSummary;
   const originalThesis = truncate(args.dna?.originalThesis ?? shortSummary, 600);
 
   const needsToBeRight = mapSentenceHeads(

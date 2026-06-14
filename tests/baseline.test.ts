@@ -70,6 +70,24 @@ describe("baseline memo understanding — Havells fixture", () => {
   });
 });
 
+// Phase 6I: a risk-dominated or very short memo can yield no valuation /
+// financial sentence. The baseline tier must still produce a non-blank
+// summary + thesis (fall back to a risk sentence, then the one-line summary).
+describe("baseline memo understanding — no valuation/financial sentences", () => {
+  const out = buildBaselineMemoUnderstanding({
+    projectId: "p_empty",
+    companyName: "Acme Corp",
+    extractedText: "Risks remain elevated heading into the print.",
+    recoveryReason: "test",
+  });
+
+  it("never emits a blank shortSummary / detailedThesis", () => {
+    expect(out.summary.shortSummary.trim().length).toBeGreaterThan(0);
+    expect(out.thesis.detailedThesis.trim().length).toBeGreaterThan(0);
+    expect(out.summary.oneLineSummary).toContain("Acme Corp");
+  });
+});
+
 describe("company detection — broker is not the company", () => {
   it("does not pick the broker (JM Financial / Beas Capital) as company", () => {
     const det = detectCompanyFromTextDetailed(havells, "havells_note.pdf");

@@ -248,7 +248,33 @@ function reducer(state: State, action: Action): State {
     case "CLEAR_SELECTED_COMPANY":
       return { ...state, selectedCompany: null };
     case "SET_INITIAL_FILE":
-      return { ...state, initialFile: action.file };
+      // A new upload invalidates ALL analysis derived from the previous memo.
+      // The reset previously lived only in SET_DNA_AND_DETECTION, which runs
+      // only on a SUCCESSFUL extraction — so replacing a good memo with one
+      // that fails extraction left the prior memo's DNA / research / generated
+      // memo / understanding on screen under the new filename.
+      return {
+        ...state,
+        initialFile: action.file,
+        extraction: null,
+        extractionStatus: "idle",
+        dna: null,
+        detection: null,
+        periodOverride: {
+          detectedCompany:
+            state.selectedCompany?.companyName ??
+            state.periodOverride.detectedCompany,
+        },
+        research: null,
+        researchState: { kind: "idle" },
+        researchProgress: buildInitialResearchProgress(),
+        generatedMemo: null,
+        llm: { kind: "idle" },
+        progress: buildInitialProgress(),
+        completedSections: {},
+        understanding: { kind: "idle" },
+        skipUnderstanding: false,
+      };
     case "SET_EXTRACTION_STATUS":
       return { ...state, extractionStatus: action.status };
     case "SET_EXTRACTION":
@@ -562,6 +588,9 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
   const researchAbort = useRef<AbortController | null>(null);
   const generateAbort = useRef<AbortController | null>(null);
   const understandAbort = useRef<AbortController | null>(null);
+  // Monotonic token guarding extractInitialMemo against out-of-order results
+  // when a second upload starts before the first finishes parsing.
+  const extractGenerationRef = useRef(0);
 
   useEffect(() => {
     api
@@ -616,6 +645,18 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
 
   const extractInitialMemo = useCallback(
     async (file: File): Promise<ExtractionResult> => {
+      // A new upload supersedes any in-flight work for the previous memo, and
+      // its own slower-resolving siblings (uploading B while A still parses).
+      // extractText takes no signal, so guard the dispatches with a generation
+      // token; also cancel research / generation / understanding from the
+      // memo being replaced.
+      const myGen = ++extractGenerationRef.current;
+      researchAbort.current?.abort();
+      researchAbort.current = null;
+      generateAbort.current?.abort();
+      generateAbort.current = null;
+      understandAbort.current?.abort();
+      understandAbort.current = null;
       const ext = getExtension(file.name);
       const local: LocalUploadedFile = {
         id: `local_initial_${Date.now()}`,
@@ -630,6 +671,9 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "SET_INITIAL_FILE", file: local });
       dispatch({ type: "SET_EXTRACTION_STATUS", status: "extracting" });
       const result = await extractText(file);
+      // A newer upload started while this one was parsing — drop its results
+      // so the slower extraction can't clobber the newer memo's state.
+      if (extractGenerationRef.current !== myGen) return result;
       dispatch({ type: "SET_EXTRACTION", result });
       if (result.status === "success" || result.status === "partial") {
         const dna = buildMemoDnaFromText({
@@ -1142,10 +1186,16 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
   }, [runOrchestratedGeneration, state.research]);
 
   const startOver = useCallback(() => {
+    // Invalidate any superseded in-flight extraction, then abort every
+    // orchestrator — including understanding, which previously survived
+    // "Start over" and could write its result back into the reset state.
+    extractGenerationRef.current++;
     researchAbort.current?.abort();
     generateAbort.current?.abort();
+    understandAbort.current?.abort();
     researchAbort.current = null;
     generateAbort.current = null;
+    understandAbort.current = null;
     dispatch({ type: "RESET" });
   }, []);
 
