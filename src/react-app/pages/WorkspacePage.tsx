@@ -21,7 +21,7 @@ import { Button } from "../components/ui/Button";
 import { Hero } from "../components/ui/Hero";
 import { Panel } from "../components/ui/Panel";
 import { UploadSlot } from "../components/ui/UploadSlot";
-import { ExtractionPreview } from "../components/ui/ExtractionPreview";
+import { ExtractionNotice } from "../components/ui/ExtractionNotice";
 import { CompanySearch } from "../components/CompanySearch";
 import { PrivacyDisclosure } from "../components/PrivacyDisclosure";
 import { PeriodPanel } from "../components/PeriodPanel";
@@ -219,7 +219,10 @@ export function WorkspacePage() {
         disabledHint="Use the company search above to choose the subject company, then the memo upload unlocks."
       />
       <PrivacyDisclosure variant="local" />
-      <ExtractionPreview
+      {/* The full extracted text feeds DNA / period detection / the LLM; we no
+          longer print the raw text layer (redundant with Memo Intelligence +
+          the "Memo loaded" tile). This only surfaces extraction problems. */}
+      <ExtractionNotice
         status={state.extractionStatus}
         result={state.extraction}
       />
