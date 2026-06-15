@@ -1,6 +1,7 @@
 import type jsPDF from "jspdf";
 import type { FollowUpMemo, MemoSection } from "@shared/types";
 import { humanSourceLabel } from "@shared/sanitizeMemo";
+import { pdfSafeText } from "./pdfText";
 
 // Phase 6F.2: jsPDF + its html2canvas/dompurify transitive deps are
 // ~400 KB unzipped. Only load them when the user actually requests a
@@ -71,7 +72,9 @@ function writeWrapped(
   doc.setFont("times", opts.bold ? "bold" : "normal");
   doc.setTextColor(...(opts.color ?? [16, 20, 24]));
   const lineGap = opts.lineGap ?? opts.size * 0.42;
-  const lines = doc.splitTextToSize(text, CONTENT_W);
+  // Standard-14 fonts are WinAnsi-only; transliterate ₹ and friends so the
+  // text renders as real glyphs instead of "¹"-style garbage.
+  const lines = doc.splitTextToSize(pdfSafeText(text), CONTENT_W);
   for (const line of lines) {
     ensureRoom(ctx, lineGap);
     doc.text(line, MARGIN_X, ctx.y);
@@ -123,7 +126,7 @@ function drawBridge(ctx: DocCtx, rows: NonNullable<MemoSection["bridge"]>, dense
     row.map((cell, ci) => {
       doc.setFont("times", ri === 0 ? "bold" : "normal");
       doc.setFontSize(cellSize);
-      return doc.splitTextToSize(cell, widths[ci] - 2) as string[];
+      return doc.splitTextToSize(pdfSafeText(cell), widths[ci] - 2) as string[];
     }),
   );
   const heights = wrapped.map(
