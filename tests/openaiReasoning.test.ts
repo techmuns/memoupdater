@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   callOpenAIResponses,
   defaultReasoningEffort,
+  defaultTimeoutMs,
   isReasoningModel,
 } from "../src/worker/llm/openai";
 
@@ -64,6 +65,21 @@ describe("defaultReasoningEffort", () => {
     expect(defaultReasoningEffort("gpt-5.5")).toBe("low");
     expect(defaultReasoningEffort("gpt-4o")).toBeUndefined();
     expect(defaultReasoningEffort(undefined)).toBeUndefined();
+  });
+});
+
+describe("defaultTimeoutMs", () => {
+  it("gives reasoning models a longer ceiling so big extractions finish", () => {
+    // 90s for gpt-5.x / o*, under Cloudflare's ~100s edge limit. The
+    // memo-understanding extraction was timing out into the regex baseline
+    // at the old 60s default.
+    expect(defaultTimeoutMs("gpt-5.5")).toBe(90_000);
+    expect(defaultTimeoutMs("gpt-5.2")).toBe(90_000);
+    expect(defaultTimeoutMs("o3-mini")).toBe(90_000);
+  });
+  it("keeps 60s for non-reasoning models / unknown", () => {
+    expect(defaultTimeoutMs("gpt-4o")).toBe(60_000);
+    expect(defaultTimeoutMs(undefined)).toBe(60_000);
   });
 });
 

@@ -9,11 +9,17 @@ import { FOLLOW_UP_MEMO_OPENAI_SCHEMA } from "./parse";
 
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const MEMO_FORMAT_NAME = "follow_up_memo";
-// Default per-call ceiling. Pure extraction / section calls keep this.
-// Web-search research passes pass a higher value (see passRoute.ts) —
-// the search round-trips legitimately take longer than a one-shot
-// completion, and a 60s ceiling timed out the heaviest pass.
+// Default per-call ceiling for NON-reasoning models. Reasoning models get a
+// longer default (see defaultTimeoutMs) because they generate slower; the
+// web-search research passes pass a higher value still (see passRoute.ts).
 const DEFAULT_TIMEOUT_MS = 60_000;
+// Reasoning models (gpt-5.x / o*) generate noticeably slower — hidden
+// reasoning + a large strict-JSON body. The memo-understanding extraction
+// (~5k-token MemoUnderstanding object) routinely needs more than 60s on
+// gpt-5.5 and was timing out into the low-quality deterministic baseline.
+// 90s gives it room while staying clear of Cloudflare's ~100s eyeball limit
+// (HTTP 524). This matches the spirit of the 92s research-pass budget.
+const REASONING_TIMEOUT_MS = 90_000;
 
 // Single source of truth for "is this a reasoning model?". On these families
 // (gpt-5.x, o1/o3/...) max_output_tokens is a SHARED budget for hidden
@@ -24,6 +30,14 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 // and truncated mid-JSON on gpt-5.5. Keep it here, import it everywhere.
 export function isReasoningModel(model: string | undefined): boolean {
   return typeof model === "string" && /^(gpt-5|o\d)/i.test(model);
+}
+
+// Default request timeout when a caller doesn't pin one. Reasoning models get
+// the longer ceiling so a slow-but-progressing extraction finishes instead of
+// timing out into a degraded fallback. The single source of truth here means
+// no call site can silently inherit a too-tight timeout for a slow model.
+export function defaultTimeoutMs(model: string | undefined): number {
+  return isReasoningModel(model) ? REASONING_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
 }
 
 // Default reasoning effort for reasoning models when a caller does not pin
@@ -132,7 +146,7 @@ export async function callOpenAIResponses(
     args.abortSignal,
     typeof args.timeoutMs === "number" && args.timeoutMs > 0
       ? args.timeoutMs
-      : DEFAULT_TIMEOUT_MS,
+      : defaultTimeoutMs(args.model),
   );
   const eventTag = args.logEventTag ?? "llm_generate";
   try {
