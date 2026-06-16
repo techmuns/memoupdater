@@ -1,5 +1,4 @@
 import type { FollowUpMemo, MemoSection } from "@shared/types";
-import { humanSourceLabel } from "@shared/sanitizeMemo";
 
 // Phase 6E: dedicated print document for the follow-up memo.
 //
@@ -256,15 +255,8 @@ function renderSection(s: MemoSection, index: number): string {
       `  <ul>\n${s.bullets.map((b) => `    <li>${escapeHtml(b)}</li>`).join("\n")}\n  </ul>`,
     );
   }
-  if (s.sources.length > 0) {
-    const labels = s.sources
-      .map((src, i) => {
-        const page = src.page ? ` p.${src.page}` : "";
-        return `${humanSourceLabel(src.documentId, i)}${page}`;
-      })
-      .join(" · ");
-    parts.push(`  <div class="sources">Sources: ${escapeHtml(labels)}</div>`);
-  }
+  // Generic "Research source N" line intentionally omitted — it added clutter
+  // with no information; full sources live in the dashboard.
   parts.push(`</section>`);
   return parts.join("\n");
 }

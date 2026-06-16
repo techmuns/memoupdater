@@ -45,7 +45,7 @@ export const CANONICAL_SECTION_TITLES: Record<CanonicalSectionId, string> = {
   sec_what_changed: "What Changed — Industry · Company · Financials",
   sec_shareholding: "Shareholding & Ownership Changes",
   sec_industry_regulatory: "Industry & Regulatory Developments",
-  sec_corporate_events: "Corporate Events (Last 12 Months)",
+  sec_corporate_events: "Corporate Events, Management & Governance",
   sec_investment_action: "Updated Investment View",
   sup_valuation_detail: "Valuation Detail · Then vs Now",
   sup_eps_bridge: "EPS Credibility Bridge",

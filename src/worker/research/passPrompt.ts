@@ -63,10 +63,11 @@ const PASS_BLOCKS: Record<ResearchPassId, string> = {
   ].join("\n"),
   management_call: [
     "Pass: EARNINGS CALL / MANAGEMENT COMMENTARY.",
-    "Scope: find the company's most recent earnings call transcript, management commentary, conference call highlights, call Q&A excerpts.",
+    "Scope: find the company's most recent earnings call transcript / concall highlights and extract a structured review.",
     "Preferred sources: company-hosted transcripts, exchange filings of the earnings call, Seeking Alpha / Motley Fool transcripts, Reuters/Bloomberg call summaries.",
-    "Categories: management, broker_consensus.",
-    "Target 1–3 findings. Focus on management TONE shifts, kept vs missed commitments, segment guidance, M&A / capex remarks.",
+    "Categories: management, broker_consensus, guidance.",
+    "Target 1–3 findings. Extract, where the call actually covered it: (a) management GUIDANCE for revenue growth, margins, capex, working capital, cash flow, debt and return ratios — quote ONLY numbers management actually stated, else 'no guidance disclosed'; (b) on any M&A: synergy quantum, integration progress, cost/revenue synergies, execution timeline; (c) how management addressed major risks (AI disruption, demand/margin/pricing pressure, regulation, competition, customer concentration); (d) where analysts pushed back or challenged assumptions; (e) whether management answered directly with evidence or vaguely/promotionally.",
+    "For every finding, DISTINGUISH management CLAIMS from independently verifiable facts — label unverified claims and set impact 'watch'. Also surface any MANAGEMENT / BOARD change mentioned (CEO/CFO/auditor departure, KMP exit) as a 'management' finding.",
     "If no transcript or call summary is available for the latest period, emit a coverage-gap finding (impact: neutral, category: 'management').",
   ].join("\n"),
   investor_presentation: [
@@ -91,8 +92,9 @@ const PASS_BLOCKS: Record<ResearchPassId, string> = {
     "Preferred sources: Screener.in, Tickertape, Yahoo Finance, TradingView, WSJ market data, broker note summaries from credible press.",
     "Categories: valuation, peers, broker_consensus.",
     "Target 1–3 findings. Quote exact multiples / prices verbatim from the source — never paraphrase numerically.",
-    "Capture, where sourced: current price, market cap, 52-WEEK RANGE, trailing AND forward P/E and EV/EBITDA, and the absolute return since the memo date together with its ANNUALISED (CAGR) figure and the relevant INDEX return over the same window for context.",
-    "Verify the current price against a market-data source and SANITY-CHECK it against the 52-week range — explicitly flag (impact: watch) any price that sits outside the 52-week high/low you found.",
+    "Report a SINGLE representative CURRENT trailing P/E and a SINGLE forward P/E (and likewise for EV/EBITDA) — NEVER a wide nonsensical range (e.g. '46x–186x'). If sources disagree, use the most recent primary/market-data value and state the basis (consolidated; reported vs adjusted EPS).",
+    "Capture, where sourced, the inputs the valuation bridge needs: current price, market cap, enterprise value, trailing AND forward P/E, trailing AND forward EV/EBITDA, P/B, FCF yield, 52-WEEK RANGE; the absolute return since the memo date with its ANNUALISED (CAGR) figure and the relevant INDEX return over the same window; and 1–2 key PEER multiples for the peer gap.",
+    "Verify the current price against a market-data source and SANITY-CHECK it against the 52-week range — explicitly flag (impact: watch) any price outside the 52-week high/low you found.",
     "If current price or multiple cannot be source-verified, say 'current price not source-verified in this pass' in the finding's summary. Do NOT invent numbers.",
   ].join("\n"),
   risks_competition: [

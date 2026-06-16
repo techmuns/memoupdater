@@ -1,6 +1,5 @@
 import type jsPDF from "jspdf";
 import type { FollowUpMemo, MemoSection } from "@shared/types";
-import { humanSourceLabel } from "@shared/sanitizeMemo";
 import { pdfSafeText } from "./pdfText";
 
 // Phase 6F.2: jsPDF + its html2canvas/dompurify transitive deps are
@@ -149,22 +148,30 @@ function drawBridge(ctx: DocCtx, rows: NonNullable<MemoSection["bridge"]>, dense
     const h = heights[ri];
     ensureRoom(ctx, h);
     const rowTop = ctx.y;
+    // Header gets an indigo-tinted band; data rows zebra-stripe (every other
+    // row a very light gray) so a dense table stays scannable.
     if (ri === 0) {
-      doc.setFillColor(238, 236, 228);
+      doc.setFillColor(238, 242, 255);
+      doc.rect(MARGIN_X, rowTop, CONTENT_W, h, "F");
+    } else if (ri % 2 === 0) {
+      doc.setFillColor(249, 250, 251);
       doc.rect(MARGIN_X, rowTop, CONTENT_W, h, "F");
     }
     for (let ci = 0; ci < row.length; ci++) {
       doc.setFont("times", ri === 0 ? "bold" : "normal");
       doc.setFontSize(cellSize);
-      doc.setTextColor(ri === 0 ? 90 : 16, ri === 0 ? 96 : 20, ri === 0 ? 102 : 24);
+      // Header indigo, first column (metric) darker, value cells near-black.
+      if (ri === 0) doc.setTextColor(67, 56, 202);
+      else if (ci === 0) doc.setTextColor(17, 24, 39);
+      else doc.setTextColor(55, 65, 81);
       const lines = row[ci];
       for (let li = 0; li < lines.length; li++) {
-        doc.text(lines[li], xs[ci] + 1.2, rowTop + topPad + ascent + li * lineGap);
+        doc.text(lines[li], xs[ci] + 1.4, rowTop + topPad + ascent + li * lineGap);
       }
     }
     // Divider at the row's true bottom.
     doc.setLineWidth(0.2);
-    doc.setDrawColor(205, 208, 212);
+    doc.setDrawColor(229, 231, 235);
     doc.line(MARGIN_X, rowTop + h, PAGE_W - MARGIN_X, rowTop + h);
     ctx.y = rowTop + h;
   }
@@ -231,7 +238,10 @@ export async function buildMemoPdf(
   // promoted valuation + financials panels count toward the budget so a
   // content-heavy memo compresses automatically.
   const panels = selectPrintedPanels(memo);
-  const dense = visibleCharCount(memo, panels) > 9_000;
+  // Lowered from 9k → 7.5k: the richer section content + the now-spacier,
+  // more-readable layout mean a heavy memo should switch to the compact
+  // typography sooner to hold the 3-page budget.
+  const dense = visibleCharCount(memo, panels) > 7_500;
   const ctx = await newCtx(dense);
   const { doc } = ctx;
 
@@ -262,14 +272,16 @@ export async function buildMemoPdf(
   // Promoted supplementary panels — valuation bridge + memo-vs-actual
   // financials, compact (table-first; full prose stays in the dashboard).
   if (panels.length > 0) {
-    ctx.y += 1.5;
-    drawHr(ctx, 0.4);
-    writeWrapped(ctx, "Valuation & financials detail", {
-      size: dense ? 9.5 : 10,
-      bold: true,
-      color: [70, 78, 90],
-    });
+    ctx.y += dense ? 3 : 4;
+    drawHr(ctx, 0.6);
     ctx.y += 0.5;
+    writeWrapped(ctx, "VALUATION & FINANCIALS DETAIL", {
+      size: dense ? 8 : 8.5,
+      bold: true,
+      color: [67, 56, 202],
+      lineGap: dense ? 3.4 : 3.6,
+    });
+    ctx.y += dense ? 0.6 : 0.8;
     for (const p of panels) {
       renderSupplementaryPanelCompact(ctx, p, dense);
     }
@@ -277,12 +289,17 @@ export async function buildMemoPdf(
 
   // Manual checks
   if (memo.manualChecksRemaining && memo.manualChecksRemaining.length > 0) {
-    ctx.y += 1.5;
-    drawHr(ctx, 0.4);
-    writeWrapped(ctx, "Manual checks remaining", { size: 10.5, bold: true });
-    ctx.y += 0.5;
+    ctx.y += dense ? 3 : 4;
+    ensureRoom(ctx, 12);
+    writeWrapped(ctx, "Manual checks remaining", {
+      size: dense ? 10 : 10.5,
+      bold: true,
+    });
+    drawHeadingRule(ctx);
+    ctx.y += dense ? 1.2 : 1.6;
     for (const m of memo.manualChecksRemaining) {
-      writeWrapped(ctx, `• ${m}`, { size: 8.5, color: [70, 78, 90] });
+      writeBullet(ctx, m, dense);
+      ctx.y += dense ? 0.5 : 0.7;
     }
   }
 
@@ -292,7 +309,7 @@ export async function buildMemoPdf(
   drawHr(ctx, 0.3);
   writeWrapped(
     ctx,
-    "Draft for research support — not investment advice; analyst sign-off required.  Supplementary valuation / EPS / memo-vs-actual detail is available in the dashboard.",
+    "Draft for research support — not investment advice; analyst sign-off required.  The full EPS-credibility bridge and per-section sources are available in the dashboard.",
     { size: 7, color: [130, 135, 142] },
   );
 
@@ -319,56 +336,79 @@ function drawSignalTag(
   doc.text(label, PAGE_W - MARGIN_X - w, baselineY);
 }
 
+// Thin divider drawn directly under a section/panel heading — the main
+// "clear division between blocks" marker.
+function drawHeadingRule(ctx: DocCtx): void {
+  ctx.y += 0.6;
+  ctx.doc.setLineWidth(0.3);
+  ctx.doc.setDrawColor(209, 213, 219);
+  ctx.doc.line(MARGIN_X, ctx.y, PAGE_W - MARGIN_X, ctx.y);
+  ctx.y += 0.4;
+}
+
+// One bullet with a HANGING indent — the glyph sits at the margin and wrapped
+// lines align under the text, not under the bullet. Far more readable than the
+// old inline "• text" which wrapped back to the margin.
+function writeBullet(ctx: DocCtx, text: string, dense: boolean): void {
+  const { doc } = ctx;
+  const size = dense ? 8.5 : 9;
+  const lineGap = dense ? 3.9 : 4.2;
+  const indent = 3.8;
+  doc.setFontSize(size);
+  doc.setFont("times", "normal");
+  doc.setTextColor(40, 46, 56);
+  const lines = doc.splitTextToSize(
+    pdfSafeText(text),
+    CONTENT_W - indent,
+  ) as string[];
+  lines.forEach((line, i) => {
+    ensureRoom(ctx, lineGap);
+    if (i === 0) doc.text("•", MARGIN_X + 0.4, ctx.y);
+    doc.text(line, MARGIN_X + indent, ctx.y);
+    ctx.y += lineGap;
+  });
+}
+
 function renderSection(ctx: DocCtx, s: MemoSection, index: number, dense: boolean): void {
-  ctx.y += dense ? 1.5 : 2;
-  // Heading line: "NN  Title" with the signal tag right-aligned alongside.
-  ensureRoom(ctx, 8);
+  // Generous space before each section, then a heading + rule for a clean
+  // top-of-section division.
+  ctx.y += dense ? 3 : 4;
+  ensureRoom(ctx, 14);
   const headingTop = ctx.y;
   const heading = `${String(index).padStart(2, "0")}  ${s.title}`;
   writeWrapped(ctx, heading, { size: dense ? 11 : 11.5, bold: true });
   drawSignalTag(ctx, s.signal, headingTop);
-  ctx.y += 0.4;
+  drawHeadingRule(ctx);
+  ctx.y += dense ? 1.4 : 1.8;
 
   if (s.summary && s.summary !== s.body) {
     writeWrapped(ctx, s.summary, {
       size: dense ? 9 : 9.5,
       bold: true,
-      lineGap: dense ? 3.8 : 4.0,
+      lineGap: dense ? 3.9 : 4.2,
     });
+    ctx.y += dense ? 0.8 : 1.0;
   }
   if (s.bridge && s.bridge.length > 0) {
-    ctx.y += 1;
     drawBridge(ctx, s.bridge, dense);
+    ctx.y += dense ? 0.6 : 0.8;
   }
   if (s.body) {
     writeWrapped(ctx, s.body, {
       size: dense ? 8.5 : 9,
-      lineGap: dense ? 3.6 : 3.9,
+      lineGap: dense ? 3.9 : 4.2,
     });
   }
   if (s.bullets && s.bullets.length > 0) {
-    ctx.y += 0.5;
+    // Clear gap before the key-points group so it reads as its own block.
+    ctx.y += dense ? 1.4 : 1.8;
     for (const b of s.bullets) {
-      writeWrapped(ctx, `• ${b}`, {
-        size: dense ? 8.5 : 9,
-        lineGap: dense ? 3.6 : 3.9,
-      });
+      writeBullet(ctx, b, dense);
+      ctx.y += dense ? 0.5 : 0.7;
     }
   }
-  if (s.sources.length > 0) {
-    ctx.y += 0.4;
-    const labels = s.sources
-      .map((src, i) => {
-        const page = src.page ? ` p.${src.page}` : "";
-        return `${humanSourceLabel(src.documentId, i)}${page}`;
-      })
-      .join("  ·  ");
-    writeWrapped(ctx, `Sources: ${labels}`, {
-      size: 7.2,
-      color: [130, 135, 142],
-      lineGap: 2.9,
-    });
-  }
+  // The generic "Research source 1 · 2 · 3" line is intentionally NOT printed
+  // — it added clutter with no information. Full sources live in the dashboard.
   ctx.y += dense ? 1.2 : 1.6;
 }
 
@@ -381,21 +421,22 @@ function renderSupplementaryPanelCompact(
   s: MemoSection,
   dense: boolean,
 ): void {
-  ctx.y += dense ? 1.2 : 1.6;
-  ensureRoom(ctx, 14);
+  ctx.y += dense ? 2.4 : 3;
+  ensureRoom(ctx, 16);
   const headingTop = ctx.y;
   writeWrapped(ctx, s.title, { size: dense ? 10 : 10.5, bold: true });
   drawSignalTag(ctx, s.signal, headingTop);
-  ctx.y += 0.4;
+  drawHeadingRule(ctx);
+  ctx.y += dense ? 1.2 : 1.6;
   if (s.summary && s.summary !== s.body) {
     writeWrapped(ctx, s.summary, {
       size: dense ? 8.5 : 9,
       bold: true,
-      lineGap: dense ? 3.6 : 3.9,
+      lineGap: dense ? 3.7 : 4.0,
     });
+    ctx.y += dense ? 0.6 : 0.8;
   }
   if (s.bridge && s.bridge.length > 0) {
-    ctx.y += 1;
     drawBridge(ctx, s.bridge, dense);
   }
   ctx.y += dense ? 1.0 : 1.4;
