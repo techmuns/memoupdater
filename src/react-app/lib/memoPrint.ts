@@ -40,6 +40,22 @@ function visibleCharCount(memo: FollowUpMemo): number {
         (row.readThrough ?? "").length;
     }
   }
+  // Count the promoted valuation/financials panels too (summary + bridge),
+  // so a content-heavy memo switches to dense once they're added.
+  for (const p of memo.supplementaryPanels ?? []) {
+    if (p.id !== "sup_valuation_detail" && p.id !== "sup_financials_actuals") {
+      continue;
+    }
+    if (!p.bridge || p.bridge.length === 0) continue;
+    n += (p.summary ?? "").length;
+    for (const row of p.bridge) {
+      n +=
+        row.metric.length +
+        (row.original ?? "").length +
+        (row.latest ?? "").length +
+        (row.readThrough ?? "").length;
+    }
+  }
   for (const m of memo.manualChecksRemaining ?? []) n += m.length;
   return n;
 }
@@ -61,6 +77,25 @@ export function buildPrintHtml(
   const sectionsHtml = memo.sections
     .map((s, i) => renderSection(s, i + 1))
     .join("\n");
+
+  // Promote the valuation bridge + memo-vs-actual financials into print
+  // (compact: title + summary + bridge), matching the jsPDF download. Only
+  // panels that carry a bridge are shown.
+  const PRINTED_PANEL_IDS = ["sup_valuation_detail", "sup_financials_actuals"];
+  const printedPanels = (memo.supplementaryPanels ?? [])
+    .filter(
+      (p) =>
+        PRINTED_PANEL_IDS.includes(p.id) && p.bridge && p.bridge.length > 0,
+    )
+    .sort(
+      (a, b) =>
+        PRINTED_PANEL_IDS.indexOf(a.id) - PRINTED_PANEL_IDS.indexOf(b.id),
+    );
+  const panelsHtml =
+    printedPanels.length > 0
+      ? `<section class="memo-sec"><h2>Valuation &amp; financials detail</h2></section>\n` +
+        printedPanels.map((p) => renderPanelCompact(p)).join("\n")
+      : "";
 
   const manualChecksHtml =
     memo.manualChecksRemaining && memo.manualChecksRemaining.length > 0
@@ -183,10 +218,11 @@ export function buildPrintHtml(
   <div class="meta">${metaParts.join(" · ")}</div>
 </header>
 ${sectionsHtml}
+${panelsHtml}
 ${manualChecksHtml}
 <footer class="memo-foot">
   Draft for research support — not investment advice; analyst sign-off required.
-  Supplementary valuation / EPS / memo-vs-actual detail is available in the dashboard.
+  Full EPS bridge and the deeper prose for each panel are available in the dashboard.
 </footer>
 <script>
   window.addEventListener("load", function () {
@@ -228,6 +264,25 @@ function renderSection(s: MemoSection, index: number): string {
       })
       .join(" · ");
     parts.push(`  <div class="sources">Sources: ${escapeHtml(labels)}</div>`);
+  }
+  parts.push(`</section>`);
+  return parts.join("\n");
+}
+
+// Compact panel render for print: title + signal + summary + bridge only.
+// Body/bullets/sources are left in the dashboard to protect the page budget.
+function renderPanelCompact(s: MemoSection): string {
+  const parts: string[] = [];
+  const sig = s.signal
+    ? `<span class="sig">${escapeHtml(signalLabel(s.signal))}</span>`
+    : "";
+  parts.push(`<section class="memo-sec">`);
+  parts.push(`  <h2>${escapeHtml(s.title)}${sig}</h2>`);
+  if (s.summary && s.summary !== s.body) {
+    parts.push(`  <p class="summary">${escapeHtml(s.summary)}</p>`);
+  }
+  if (s.bridge && s.bridge.length > 0) {
+    parts.push(renderBridge(s));
   }
   parts.push(`</section>`);
   return parts.join("\n");

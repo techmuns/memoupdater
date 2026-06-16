@@ -94,9 +94,17 @@ function drawBridge(ctx: DocCtx, rows: NonNullable<MemoSection["bridge"]>, dense
   if (rows.length === 0) return;
   const { doc } = ctx;
   const cellSize = dense ? 7.5 : 8;
-  const lineGap = cellSize * 0.42;
-  // Column layout: Metric | Original | Latest | Read-through
-  // Widths proportional, summing to CONTENT_W.
+  const lineGap = cellSize * 0.42; // baseline-to-baseline within a cell
+  // Box-model paddings so a tall wrapped cell never collides with the row
+  // above/below. The previous code drew the first baseline AT the row top
+  // (ascenders bled into the prior row) and put the border a fixed offset up —
+  // long cells overlapped. Now: first baseline sits topPad+ascent below the
+  // row top, the row is exactly tall enough for its tallest cell, and the
+  // divider is drawn at the row's true bottom.
+  const topPad = lineGap * 0.5;
+  const botPad = lineGap * 0.4;
+  const ascent = lineGap * 0.78;
+  // Column layout: Metric | Original | Latest | Read-through (sum = CONTENT_W).
   const widths = [
     CONTENT_W * 0.22,
     CONTENT_W * 0.22,
@@ -110,7 +118,6 @@ function drawBridge(ctx: DocCtx, rows: NonNullable<MemoSection["bridge"]>, dense
     MARGIN_X + widths[0] + widths[1] + widths[2],
   ];
 
-  // Pre-measure each row's height (max wrapped lines × lineGap).
   doc.setFontSize(cellSize);
   doc.setFont("times", "normal");
   const cells: string[][] = [
@@ -126,57 +133,83 @@ function drawBridge(ctx: DocCtx, rows: NonNullable<MemoSection["bridge"]>, dense
     row.map((cell, ci) => {
       doc.setFont("times", ri === 0 ? "bold" : "normal");
       doc.setFontSize(cellSize);
-      return doc.splitTextToSize(pdfSafeText(cell), widths[ci] - 2) as string[];
+      return doc.splitTextToSize(pdfSafeText(cell), widths[ci] - 2.4) as string[];
     }),
   );
-  const heights = wrapped.map(
-    (row) => Math.max(...row.map((cell) => cell.length)) * lineGap + 1.5,
-  );
-  const totalHeight = heights.reduce((a, b) => a + b, 0);
-  // Allow the bridge to break across pages if it doesn't fit on the current one
-  ensureRoom(ctx, Math.min(totalHeight, 40));
+  const heights = wrapped.map((row) => {
+    const maxLines = Math.max(...row.map((cell) => cell.length));
+    return topPad + maxLines * lineGap + botPad;
+  });
+  // Keep the header row with at least the first data row (avoid an orphan
+  // header at a page bottom); rows still break individually after that.
+  ensureRoom(ctx, heights[0] + (heights[1] ?? 0));
 
-  // Render the table row by row, breaking pages when needed.
   for (let ri = 0; ri < wrapped.length; ri++) {
     const row = wrapped[ri];
     const h = heights[ri];
     ensureRoom(ctx, h);
+    const rowTop = ctx.y;
     if (ri === 0) {
       doc.setFillColor(238, 236, 228);
-      doc.rect(MARGIN_X, ctx.y - lineGap + 1, CONTENT_W, h - 0.5, "F");
+      doc.rect(MARGIN_X, rowTop, CONTENT_W, h, "F");
     }
-    doc.setLineWidth(0.2);
-    doc.setDrawColor(190, 195, 200);
-    // Bottom border for each row
-    doc.line(MARGIN_X, ctx.y + h - lineGap - 0.5, PAGE_W - MARGIN_X, ctx.y + h - lineGap - 0.5);
     for (let ci = 0; ci < row.length; ci++) {
       doc.setFont("times", ri === 0 ? "bold" : "normal");
       doc.setFontSize(cellSize);
       doc.setTextColor(ri === 0 ? 90 : 16, ri === 0 ? 96 : 20, ri === 0 ? 102 : 24);
       const lines = row[ci];
       for (let li = 0; li < lines.length; li++) {
-        doc.text(lines[li], xs[ci] + 1, ctx.y + li * lineGap);
+        doc.text(lines[li], xs[ci] + 1.2, rowTop + topPad + ascent + li * lineGap);
       }
     }
-    ctx.y += h;
+    // Divider at the row's true bottom.
+    doc.setLineWidth(0.2);
+    doc.setDrawColor(205, 208, 212);
+    doc.line(MARGIN_X, rowTop + h, PAGE_W - MARGIN_X, rowTop + h);
+    ctx.y = rowTop + h;
   }
   ctx.y += 1.5;
 }
 
-function visibleCharCount(memo: FollowUpMemo): number {
+// The valuation bridge and the memo-vs-actual financials are the two
+// supplementary panels a follow-up memo must show IN PRINT (a PM reads them
+// first). They are promoted into the 3-page PDF in COMPACT form — heading +
+// summary line + bridge table only; the prose/bullets stay in the dashboard
+// drawer. Only panels that actually carry a bridge are printed (a "no data"
+// panel adds nothing and is skipped to protect the page budget).
+const PRINTED_PANEL_IDS: readonly string[] = [
+  "sup_valuation_detail",
+  "sup_financials_actuals",
+];
+
+function selectPrintedPanels(memo: FollowUpMemo): MemoSection[] {
+  const panels = memo.supplementaryPanels ?? [];
+  return PRINTED_PANEL_IDS.map((id) => panels.find((p) => p.id === id)).filter(
+    (p): p is MemoSection => Boolean(p && p.bridge && p.bridge.length > 0),
+  );
+}
+
+function bridgeCharCount(s: MemoSection): number {
+  let n = (s.summary ?? "").length;
+  for (const row of s.bridge ?? []) {
+    n +=
+      row.metric.length +
+      (row.original ?? "").length +
+      (row.latest ?? "").length +
+      (row.readThrough ?? "").length;
+  }
+  return n;
+}
+
+function visibleCharCount(memo: FollowUpMemo, panels: MemoSection[]): number {
   let n = memo.title.length;
   for (const s of memo.sections) {
     n += (s.summary ?? "").length;
     n += (s.body ?? "").length;
     for (const b of s.bullets ?? []) n += b.length;
-    for (const row of s.bridge ?? []) {
-      n +=
-        row.metric.length +
-        (row.original ?? "").length +
-        (row.latest ?? "").length +
-        (row.readThrough ?? "").length;
-    }
+    n += bridgeCharCount({ ...s, summary: undefined });
   }
+  for (const p of panels) n += bridgeCharCount(p);
   for (const m of memo.manualChecksRemaining ?? []) n += m.length;
   return n;
 }
@@ -194,8 +227,11 @@ export async function buildMemoPdf(
   memo: FollowUpMemo,
   opts: BuildMemoPdfOptions = {},
 ): Promise<Blob> {
-  // Adaptive density — keeps a long memo inside the 3-page budget.
-  const dense = visibleCharCount(memo) > 9_000;
+  // Adaptive density — keeps a long memo inside the 3-page budget. The
+  // promoted valuation + financials panels count toward the budget so a
+  // content-heavy memo compresses automatically.
+  const panels = selectPrintedPanels(memo);
+  const dense = visibleCharCount(memo, panels) > 9_000;
   const ctx = await newCtx(dense);
   const { doc } = ctx;
 
@@ -223,6 +259,22 @@ export async function buildMemoPdf(
     renderSection(ctx, s, i + 1, dense);
   });
 
+  // Promoted supplementary panels — valuation bridge + memo-vs-actual
+  // financials, compact (table-first; full prose stays in the dashboard).
+  if (panels.length > 0) {
+    ctx.y += 1.5;
+    drawHr(ctx, 0.4);
+    writeWrapped(ctx, "Valuation & financials detail", {
+      size: dense ? 9.5 : 10,
+      bold: true,
+      color: [70, 78, 90],
+    });
+    ctx.y += 0.5;
+    for (const p of panels) {
+      renderSupplementaryPanelCompact(ctx, p, dense);
+    }
+  }
+
   // Manual checks
   if (memo.manualChecksRemaining && memo.manualChecksRemaining.length > 0) {
     ctx.y += 1.5;
@@ -247,18 +299,34 @@ export async function buildMemoPdf(
   return doc.output("blob");
 }
 
+// Draw the section/panel signal tag RIGHT-ALIGNED on the heading's first
+// baseline. Previously it was placed at a fixed left x (MARGIN_X + 4) on the
+// heading baseline, so "(Watch)" printed ON TOP of the section title. The
+// title is left-aligned and short, so right-aligning the tag at the page
+// margin makes a collision impossible regardless of title length.
+function drawSignalTag(
+  ctx: DocCtx,
+  signal: MemoSection["signal"] | undefined,
+  baselineY: number,
+): void {
+  if (!signal) return;
+  const { doc } = ctx;
+  doc.setFontSize(7);
+  doc.setFont("times", "italic");
+  doc.setTextColor(120, 124, 132);
+  const label = `(${signalLabel(signal)})`;
+  const w = doc.getTextWidth(label);
+  doc.text(label, PAGE_W - MARGIN_X - w, baselineY);
+}
+
 function renderSection(ctx: DocCtx, s: MemoSection, index: number, dense: boolean): void {
   ctx.y += dense ? 1.5 : 2;
-  // Heading line: "NN  Title  [signal]"
+  // Heading line: "NN  Title" with the signal tag right-aligned alongside.
   ensureRoom(ctx, 8);
+  const headingTop = ctx.y;
   const heading = `${String(index).padStart(2, "0")}  ${s.title}`;
   writeWrapped(ctx, heading, { size: dense ? 11 : 11.5, bold: true });
-  if (s.signal) {
-    ctx.doc.setFontSize(7);
-    ctx.doc.setFont("times", "italic");
-    ctx.doc.setTextColor(120, 124, 132);
-    ctx.doc.text(`(${signalLabel(s.signal)})`, MARGIN_X + 4, ctx.y - (dense ? 4.2 : 4.5));
-  }
+  drawSignalTag(ctx, s.signal, headingTop);
   ctx.y += 0.4;
 
   if (s.summary && s.summary !== s.body) {
@@ -302,6 +370,35 @@ function renderSection(ctx: DocCtx, s: MemoSection, index: number, dense: boolea
     });
   }
   ctx.y += dense ? 1.2 : 1.6;
+}
+
+// Compact print of a promoted supplementary panel: title + signal + one
+// summary line + the bridge table. Body/bullets/sources are intentionally
+// omitted in print (they live in the dashboard drawer) to protect the
+// 3-page budget — the bridge IS the decision content here.
+function renderSupplementaryPanelCompact(
+  ctx: DocCtx,
+  s: MemoSection,
+  dense: boolean,
+): void {
+  ctx.y += dense ? 1.2 : 1.6;
+  ensureRoom(ctx, 14);
+  const headingTop = ctx.y;
+  writeWrapped(ctx, s.title, { size: dense ? 10 : 10.5, bold: true });
+  drawSignalTag(ctx, s.signal, headingTop);
+  ctx.y += 0.4;
+  if (s.summary && s.summary !== s.body) {
+    writeWrapped(ctx, s.summary, {
+      size: dense ? 8.5 : 9,
+      bold: true,
+      lineGap: dense ? 3.6 : 3.9,
+    });
+  }
+  if (s.bridge && s.bridge.length > 0) {
+    ctx.y += 1;
+    drawBridge(ctx, s.bridge, dense);
+  }
+  ctx.y += dense ? 1.0 : 1.4;
 }
 
 export async function downloadMemoPdf(

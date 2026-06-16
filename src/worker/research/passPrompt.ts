@@ -38,6 +38,9 @@ const SHARED_SYSTEM_LINES = [
   "- If you cannot find any usable source for this pass, return findings: [] with a warning that says so. That is a legitimate, non-failing outcome — the orchestrator combines this pass with five others.",
   "- For each finding you DO emit, give a short stable id (e.g. 'f01', 'f02'), classify it under one of the schema's enumerated categories, choose impact ∈ {positive, negative, neutral, watch}.",
   "- Write `summary` in 2–4 sentences max. Write `relevance` in 1–2 sentences. Number-led where possible. No generic hedging. No fake precision.",
+  "- Forward-guidance discipline (HARD): report forward guidance, price targets, or future-period numbers ONLY when a source EXPLICITLY attributes that number to the company or its management. If the company disclosed no guidance, do NOT manufacture one — say 'no forward guidance disclosed' in the finding. Never emit a next-year revenue / margin / EPS figure the sources do not contain.",
+  "- Numbers: capture ABSOLUTE figures with their unit/currency alongside any percentage. When both a REPORTED and an 'adjusted' figure exist, capture both and note the gap — do not silently report only the adjusted one.",
+  "- Claims vs verifiable facts: tag management's qualitative claims ('ahead of plan', 'margins improving', 'synergies on track', 'no real competition') as claims to verify — never as confirmed outcomes. An unverified management claim is at most impact `watch`.",
   "- Cite every source you used. Each source object MUST carry title, url, tier, and (when known) date and a short note.",
   "- Source priority (HARD ranking — never upgrade a source you cannot verify): official > company > exchange > transcript > press > market_data > other. The server will only ever DOWNGRADE your tier — never upgrade — so be honest.",
   "- The HIGHEST-tier source must come first in each finding's `sources[]`.",
@@ -54,6 +57,8 @@ const PASS_BLOCKS: Record<ResearchPassId, string> = {
     "Categories: financials, filings, guidance.",
     "EFFICIENCY (HARD): keep this pass FAST. Run at most 2–3 web_search calls total — one for the latest results, one for the shareholding pattern. Do NOT keep searching for more sources once you have a primary doc for each. Target 2–3 findings total.",
     "Exactly ONE finding MUST cover the shareholding pattern (category: 'filings'). Quote SPECIFIC percentages AND, where the filing or Screener.in surfaces them, NAMED institutional holders (e.g. 'HDFC Mutual Fund added 1.4 ppt to 3.1%', 'Government Pension Fund Global exited'). Do NOT invent fund names. Cover, in priority order: promoter holding + pledge, FII holding (name top movers), DII / mutual-fund holding (name top movers), public/retail, plus any QIP / preferential / buyback / insider trade visible — but a single percentages-only finding is acceptable if named movers aren't surfaced in your first search.",
+    "GOVERNANCE / ACCOUNTING-QUALITY scan (capture as findings when the results or filings surface them — these are thesis-altering and often missed): KMP changes (CFO/CEO/auditor resignations or repeated churn), auditor change or qualifications, a shift from net-cash to net-debt or rising leverage, working-capital / receivable-days deterioration, heavy reliance on 'adjusted' EBITDA/PAT vs reported (and the SIZE of the gap), promoter-pledge changes, related-party transactions, contingent liabilities / corporate guarantees. Emit under category 'filings' or 'financials' with impact 'watch' or 'negative' as warranted.",
+    "DEAL ECONOMICS: if a material acquisition / divestment / fund-raise occurred in the window, capture its SIZE and HOW it was funded (debt vs equity/QIP — note dilution) and any guarantees. State absolute figures.",
     "If only press summaries exist (no primary doc), emit a coverage-gap finding (impact: neutral, category: 'filings') saying so.",
   ].join("\n"),
   management_call: [
@@ -86,6 +91,8 @@ const PASS_BLOCKS: Record<ResearchPassId, string> = {
     "Preferred sources: Screener.in, Tickertape, Yahoo Finance, TradingView, WSJ market data, broker note summaries from credible press.",
     "Categories: valuation, peers, broker_consensus.",
     "Target 1–3 findings. Quote exact multiples / prices verbatim from the source — never paraphrase numerically.",
+    "Capture, where sourced: current price, market cap, 52-WEEK RANGE, trailing AND forward P/E and EV/EBITDA, and the absolute return since the memo date together with its ANNUALISED (CAGR) figure and the relevant INDEX return over the same window for context.",
+    "Verify the current price against a market-data source and SANITY-CHECK it against the 52-week range — explicitly flag (impact: watch) any price that sits outside the 52-week high/low you found.",
     "If current price or multiple cannot be source-verified, say 'current price not source-verified in this pass' in the finding's summary. Do NOT invent numbers.",
   ].join("\n"),
   risks_competition: [

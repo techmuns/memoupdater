@@ -352,7 +352,7 @@ function SectionView({
   return (
     <section className={`scroll-mt-24 ${isFirst ? "" : "pt-10"}`}>
       {!isFirst && <div className="hairline mb-10" />}
-      <div className="flex items-baseline gap-4 mb-4">
+      <div className="flex items-baseline flex-wrap gap-x-4 gap-y-2 mb-4">
         <span
           className="tnum text-[36px] font-light text-[var(--color-text-subtle)] leading-none"
           style={{ fontFamily: "var(--font-serif)" }}
@@ -360,7 +360,7 @@ function SectionView({
           {String(index + 1).padStart(2, "0")}
         </span>
         <h3
-          className="text-[20px] font-semibold tracking-tight text-[var(--color-text)] leading-tight"
+          className="text-[20px] font-semibold tracking-tight text-[var(--color-text)] leading-tight min-w-0"
           style={{ fontFamily: "var(--font-serif)" }}
         >
           {section.title}
