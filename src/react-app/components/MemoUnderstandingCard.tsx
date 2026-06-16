@@ -30,6 +30,7 @@ import type {
 } from "@shared/types";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
+import { Skeleton } from "./ui/Skeleton";
 import { cn } from "../lib/cn";
 import {
   summarizeUnderstanding,
@@ -116,10 +117,7 @@ export function MemoUnderstandingCard({
         </div>
         <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
           {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="h-14 rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-muted)] animate-pulse"
-            />
+            <Skeleton key={i} className="h-14 rounded-[var(--radius-md)]" />
           ))}
         </div>
       </Frame>

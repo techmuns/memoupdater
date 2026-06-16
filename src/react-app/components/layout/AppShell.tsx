@@ -5,16 +5,25 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-// Phase 5H: single-page workbench shell. The left sidebar was removed —
-// the only nav (Settings) lives in the CommandBar now. Content is centered
-// and capped so it fills the freed space on laptops without stretching
-// awkwardly on large monitors.
+// Munshot 3-zone shell: sticky 48px header (CommandBar), a single scrollable
+// main (the ONLY scroll area), no footer. The shell fills the iframe with
+// height:100vh and never lets the page itself scroll. Content stays centered
+// and capped so it doesn't stretch awkwardly on wide monitors.
 export function AppShell({ children }: AppShellProps) {
   return (
-    <div className="h-full flex flex-col bg-[var(--color-bg)]">
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        overflow: "hidden",
+        background:
+          "linear-gradient(to bottom, rgba(249,250,251,0.8), #ffffff)",
+      }}
+    >
       <CommandBar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-[1320px] mx-auto px-8 py-8">{children}</div>
+      <main style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
+        <div className="max-w-[1320px] mx-auto">{children}</div>
       </main>
     </div>
   );

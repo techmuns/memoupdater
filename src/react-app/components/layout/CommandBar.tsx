@@ -1,139 +1,184 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import {
-  ChevronRight,
-  Plus,
-  Cloud,
-  CircleUser,
-  Settings as SettingsIcon,
-} from "lucide-react";
+import { Plus, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { useMemoProject } from "../../state/MemoProjectContext";
 import { deriveCommandBarValues } from "./commandBarState";
 
+// Munshot Zone 1: sticky 48px header. Left = product mark + title + active
+// ticker pill (shown ONLY when a company is selected). Right = stage indicator
+// + New Memo + Settings. No charts/tables/large descriptions live here.
 export function CommandBar() {
   const navigate = useNavigate();
   const { state } = useMemoProject();
-  const { projectLabel, trailingTicker, stageLabel, stageTone } =
-    deriveCommandBarValues({
-      selectedCompany: state.selectedCompany
-        ? {
-            companyName: state.selectedCompany.companyName,
-            ticker: state.selectedCompany.ticker,
-          }
-        : null,
-      detection: state.detection,
-      periodOverride: state.periodOverride,
-      extraction: state.extraction
-        ? { source: { filename: state.extraction.source.filename } }
-        : null,
-      dna: state.dna,
-      research: state.research,
-      researchState: state.researchState,
-      generatedMemo: state.generatedMemo,
-      llm: state.llm,
-    });
+  const { stageLabel, stageTone } = deriveCommandBarValues({
+    selectedCompany: state.selectedCompany
+      ? {
+          companyName: state.selectedCompany.companyName,
+          ticker: state.selectedCompany.ticker,
+        }
+      : null,
+    detection: state.detection,
+    periodOverride: state.periodOverride,
+    extraction: state.extraction
+      ? { source: { filename: state.extraction.source.filename } }
+      : null,
+    dna: state.dna,
+    research: state.research,
+    researchState: state.researchState,
+    generatedMemo: state.generatedMemo,
+    llm: state.llm,
+  });
 
-  const stageDot =
+  const company = state.selectedCompany;
+  const stageDotColor =
     stageTone === "success"
-      ? "bg-[var(--color-success)]"
+      ? "#16a34a"
       : stageTone === "warning"
-        ? "bg-[var(--color-warning)]"
-        : "bg-[var(--color-text-subtle)]";
+        ? "#d97706"
+        : "#9ca3af";
 
   return (
-    <header className="h-14 shrink-0 sticky top-0 z-30 bg-[var(--color-surface)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--color-surface)]/80 border-b border-[var(--color-border)]">
-      <div className="h-full px-5 flex items-center gap-3">
+    <header
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 10,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "0 24px",
+        height: 48,
+        background: "rgba(255, 255, 255, 0.95)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        borderBottom: "1px solid #e5e7eb",
+        flexShrink: 0,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <NavLink
           to="/workspace"
-          className="flex items-center gap-2 pr-3 mr-1 border-r border-[var(--color-border)] h-8 rounded-[var(--radius-md)] hover:opacity-80 transition-opacity"
           aria-label="Memo Updater home"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
         >
-          <div className="w-7 h-7 rounded-[var(--radius-md)] bg-[var(--color-ink)] text-white grid place-items-center text-[11px] font-bold tracking-tight">
+          <span
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 6,
+              background: "#4f46e5",
+              color: "#ffffff",
+              display: "grid",
+              placeItems: "center",
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
             M
-          </div>
-          <div className="leading-tight">
-            <div className="text-[13px] font-semibold tracking-tight">
-              Memo Updater
-            </div>
-            <div className="text-[9px] uppercase tracking-[0.14em] text-[var(--color-text-subtle)]">
-              Buy-side cockpit
-            </div>
-          </div>
+          </span>
+          <h1
+            style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: "#111827",
+              margin: 0,
+            }}
+          >
+            Memo Updater
+          </h1>
         </NavLink>
+        {company && (
+          <TickerPill ticker={company.ticker} company={company.companyName} />
+        )}
+      </div>
 
-        <CommandChip
-          label="Project"
-          value={projectLabel}
-          trailing={trailingTicker}
-        />
-        <ChevronRight className="w-3 h-3 text-[var(--color-text-subtle)]" />
-        <CommandChip label="Stage" value={stageLabel} dot={stageDot} />
-        <CommandChip
-          label="Deploy"
-          value="CF Workers"
-          icon={<Cloud className="w-3 h-3" />}
-        />
-
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            size="sm"
-            leadingIcon={<Plus className="w-3.5 h-3.5" />}
-            onClick={() => navigate("/intake")}
-          >
-            New Memo Update
-          </Button>
-          <NavLink
-            to="/settings"
-            aria-label="Settings"
-            className={({ isActive }) =>
-              `inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] font-medium rounded-[var(--radius-md)] transition-colors ${
-                isActive
-                  ? "bg-[var(--color-ink-soft)] text-[var(--color-ink)] font-semibold"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
-              }`
-            }
-          >
-            <SettingsIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">Settings</span>
-          </NavLink>
-          <div className="flex items-center gap-1.5 pl-3 ml-1 border-l border-[var(--color-border)] h-7 text-[12px] text-[var(--color-text-muted)]">
-            <CircleUser className="w-4 h-4" />
-            <span>tech@muns.io</span>
-          </div>
-        </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            color: "#6b7280",
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: stageDotColor,
+            }}
+          />
+          {stageLabel}
+        </span>
+        <Button
+          size="sm"
+          leadingIcon={<Plus className="w-3.5 h-3.5" />}
+          onClick={() => navigate("/intake")}
+        >
+          New Memo
+        </Button>
+        <NavLink
+          to="/settings"
+          aria-label="Settings"
+          className={({ isActive }) =>
+            `inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] font-medium rounded-[var(--radius-md)] transition-colors ${
+              isActive
+                ? "bg-[var(--color-ink-soft)] text-[var(--color-ink)] font-semibold"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
+            }`
+          }
+        >
+          <SettingsIcon className="w-4 h-4" />
+          <span className="hidden sm:inline">Settings</span>
+        </NavLink>
       </div>
     </header>
   );
 }
 
-function CommandChip({
-  label,
-  value,
-  trailing,
-  dot,
-  icon,
-}: {
-  label: string;
-  value: string;
-  trailing?: string;
-  dot?: string;
-  icon?: React.ReactNode;
-}) {
+// Active ticker pill — indigo, shown only when a company is selected.
+function TickerPill({ ticker, company }: { ticker: string; company?: string }) {
   return (
-    <div className="inline-flex items-center gap-2 h-7 px-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)]">
-      {dot && <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />}
-      {icon && <span className="text-[var(--color-text-subtle)]">{icon}</span>}
-      <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-subtle)]">
-        {label}
-      </span>
-      <span className="text-[12px] font-medium text-[var(--color-text)] tracking-tight">
-        {value}
-      </span>
-      {trailing && (
-        <span className="text-[10px] font-mono text-[var(--color-text-muted)] px-1 py-0.5 rounded bg-[var(--color-surface)] border border-[var(--color-border)]">
-          {trailing}
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "2px 10px",
+        background: "#eef2ff",
+        color: "#4338ca",
+        borderRadius: 99,
+        fontSize: 12,
+        fontWeight: 600,
+        border: "1px solid #e0e7ff",
+        maxWidth: 260,
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          background: "#6366f1",
+          borderRadius: "50%",
+          flexShrink: 0,
+        }}
+      />
+      {ticker}
+      {company && (
+        <span
+          style={{
+            color: "#818cf8",
+            fontWeight: 400,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          - {company}
         </span>
       )}
-    </div>
+    </span>
   );
 }

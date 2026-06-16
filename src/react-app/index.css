@@ -1,45 +1,45 @@
 @import "tailwindcss";
 
 @theme {
-  /* Neutral ramp — warm */
-  --color-paper: #f6f4ee;
-  --color-bg: #faf8f3;
+  /* Neutral ramp — cool grayscale (Munshot dashboard tokens) */
+  --color-paper: #f9fafb;
+  --color-bg: #f9fafb;
   --color-surface: #ffffff;
-  --color-surface-muted: #f4f2ec;
-  --color-surface-sunken: #ece9e0;
+  --color-surface-muted: #f9fafb;
+  --color-surface-sunken: #f3f4f6;
 
-  --color-border: #e6e2d6;
-  --color-border-strong: #cfcabb;
-  --color-border-ink: #1f2937;
+  --color-border: #e5e7eb;
+  --color-border-strong: #d1d5db;
+  --color-border-ink: #111827;
 
-  --color-text: #0e1420;
-  --color-text-muted: #5a6473;
-  --color-text-subtle: #8d97a6;
+  --color-text: #111827;
+  --color-text-muted: #6b7280;
+  --color-text-subtle: #9ca3af;
   --color-text-inverse: #ffffff;
 
-  /* Primary — ink navy (was a brighter blue; redesigned to ink) */
-  --color-ink: #0a2540;
-  --color-ink-hover: #061a30;
-  --color-ink-soft: #e6ecf3;
+  /* Primary — indigo (Munshot dashboard primary #4f46e5) */
+  --color-ink: #4f46e5;
+  --color-ink-hover: #4338ca;
+  --color-ink-soft: #eef2ff;
   --color-ink-foreground: #ffffff;
 
   /* Backwards-compatible alias so existing accent usage still resolves */
-  --color-accent: #0a2540;
-  --color-accent-hover: #061a30;
-  --color-accent-soft: #e6ecf3;
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-soft: #eef2ff;
 
-  /* Signal colors — restrained */
-  --color-signal-up: #0f7a4c;
-  --color-signal-up-soft: #e1f2e8;
-  --color-signal-down: #b42318;
-  --color-signal-down-soft: #fbe7e4;
-  --color-signal-flat: #6b6657;
-  --color-signal-flat-soft: #efece4;
+  /* Signal colors — data-viz semantics, paired with the indigo chrome */
+  --color-signal-up: #16a34a;
+  --color-signal-up-soft: #dcfce7;
+  --color-signal-down: #dc2626;
+  --color-signal-down-soft: #fee2e2;
+  --color-signal-flat: #6b7280;
+  --color-signal-flat-soft: #f3f4f6;
 
-  --color-warning: #92510a;
-  --color-warning-soft: #fbedd2;
-  --color-success: #0f7a4c;
-  --color-success-soft: #e1f2e8;
+  --color-warning: #d97706;
+  --color-warning-soft: #fef3c7;
+  --color-success: #16a34a;
+  --color-success-soft: #dcfce7;
 
   /* Elevation */
   --shadow-hairline: 0 0 0 1px rgba(15, 23, 42, 0.04);
@@ -56,9 +56,10 @@
   --radius-lg: 10px;
   --radius-xl: 14px;
 
+  /* No custom fonts are loaded — UI chrome uses the system stack. */
   --font-sans:
-    "Inter", "InterVariable", ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
   --font-serif:
     "Source Serif Pro", "Iowan Old Style", "Apple Garamond", Baskerville,
     Georgia, ui-serif, serif;
@@ -87,21 +88,32 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Subtle paper grain — kept inline as a base64 SVG so no extra asset ships */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.35;
-  mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.06 0 0 0 0 0.08 0 0 0 0 0.12 0 0 0 0.05 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-}
-
 #root {
   position: relative;
   z-index: 1;
+}
+
+/* Shimmer skeleton for widget loading states (Munshot UI standard — never a
+   bare spinner). Apply `.shimmer` to placeholder blocks sized to the final
+   widget shape. */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    #e5e7eb 0%,
+    #f3f4f6 50%,
+    #e5e7eb 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
 }
 
 ::selection {
