@@ -5,6 +5,10 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Memo Updater</title>
+    <!-- Munshot Dashboard SDK — loaded before the app module so the
+         window.MunshotDashboardSDK namespace exists at startup. The app
+         degrades to standalone mode when this isn't present (local dev). -->
+    <script src="https://munshot.s3.ap-south-1.amazonaws.com/SDK+script/munshot-dashboard-sdk.v1.0.0.min.js"></script>
   </head>
   <body>
     <div id="root"></div>
