@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
-  Copy,
   Download,
   FileText,
   Layers,
@@ -18,8 +16,7 @@ import { humanSourceLabel } from "@shared/sanitizeMemo";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 import { SIGNAL_BADGE_TONE, SIGNAL_LABEL } from "../lib/signalDisplay";
-import { buildPrintHtml } from "../lib/memoPrint";
-import { downloadMemoPdf } from "../lib/memoPdf";
+import { buildMemoPdf, downloadMemoPdf } from "../lib/memoPdf";
 
 const CONFIDENCE_TONE: Record<MemoConfidence, "success" | "warning" | "neutral"> = {
   high: "success",
@@ -44,52 +41,44 @@ export function MemoReview({
   generationType,
   researchWindowLabel,
 }: MemoReviewProps) {
-  const [copied, setCopied] = useState(false);
-
-  const markdown = useMemo(() => buildMarkdown(memo), [memo]);
   const filenameStem = useMemo(() => buildFilenameStem(memo), [memo]);
-  const copy = async () => {
-    if (!markdown) return;
-    await navigator.clipboard.writeText(markdown);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
-  };
-  const downloadMarkdown = (): void => {
-    if (!markdown) return;
-    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+
+  // Print uses the SAME jsPDF output as Download PDF, so the printed result is
+  // byte-for-byte the clean ≤3-page memo. (The old path rendered the on-screen
+  // HTML at web font sizes, which ballooned to ~20 pages and didn't match the
+  // download.) The clean PDF is loaded into a hidden iframe and printed via
+  // its own print dialog; if that isn't available, it opens in a new tab so
+  // the user can print from the browser's PDF viewer.
+  const printMemo = async (): Promise<void> => {
+    const blob = await buildMemoPdf(memo, { researchWindowLabel });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${filenameStem}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const iframe = document.createElement("iframe");
+    Object.assign(iframe.style, {
+      position: "fixed",
+      right: "0",
+      bottom: "0",
+      width: "1px",
+      height: "1px",
+      border: "0",
+      opacity: "0",
+    });
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch {
+        window.open(url, "_blank", "noopener");
+      }
+    };
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    // Revoke + remove after the dialog has had time to read the blob.
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+      iframe.remove();
+    }, 60_000);
   };
-  // Phase 6E: print via a dedicated, self-contained document. Printing
-  // the app page directly produced blank PDFs (the memo sits deep in the
-  // React tree and a display:none ancestor can't be re-shown). The new
-  // window contains ONLY the memo with compact A4 typography tuned for
-  // a ≤3-page output, auto-triggers the print dialog, and closes itself
-  // after printing. If the popup is blocked we fall back to printing the
-  // app page (the global print CSS handles that path).
-  const printMemo = (): void => {
-    const html = buildPrintHtml(memo, { researchWindowLabel });
-    const w = window.open("", "_blank");
-    if (!w) {
-      window.print();
-      return;
-    }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-  };
-  // Phase 6F.2: real client-side PDF with embedded text — replaces the
-  // print-window path for the canonical download. Searchable, copy-
-  // pasteable, properly fonted, ≤3 pages. The Print / Save as PDF
-  // button is kept as a secondary option for users who specifically
-  // want browser-rendered output. Dynamic import means the ~400 KB
-  // jsPDF+html2canvas chunk only loads when the user clicks.
+
   const downloadPdf = async (): Promise<void> => {
     await downloadMemoPdf(memo, filenameStem, { researchWindowLabel });
   };
@@ -137,29 +126,12 @@ export function MemoReview({
             Download PDF
           </Button>
           <Button
-            variant="secondary"
-            onClick={downloadMarkdown}
-            leadingIcon={<Download className="w-4 h-4" />}
-          >
-            Markdown
-          </Button>
-          <Button
             variant="outline"
             size="sm"
             onClick={printMemo}
             leadingIcon={<Printer className="w-4 h-4" />}
           >
             Print
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={copy}
-            leadingIcon={
-              copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />
-            }
-          >
-            {copied ? "Copied" : "Copy"}
           </Button>
         </div>
       </header>
@@ -507,76 +479,6 @@ function BridgeTable({
       </table>
     </div>
   );
-}
-
-function buildMarkdown(memo: FollowUpMemo): string {
-  const lines: string[] = [
-    `# ${memo.title}`,
-    "",
-    `Generated: ${memo.generatedAt}`,
-    "",
-  ];
-  memo.sections.forEach((s, i) => appendSectionMarkdown(lines, s, i + 1));
-  if (memo.manualChecksRemaining && memo.manualChecksRemaining.length > 0) {
-    lines.push("## Manual checks remaining", "");
-    for (const item of memo.manualChecksRemaining) {
-      lines.push(`- ${item}`);
-    }
-    lines.push("");
-  }
-  if (memo.supplementaryPanels && memo.supplementaryPanels.length > 0) {
-    lines.push("---", "", "# Supplementary detail", "");
-    memo.supplementaryPanels.forEach((s, i) =>
-      appendSectionMarkdown(lines, s, i + 1),
-    );
-  }
-  return lines.join("\n");
-}
-
-function appendSectionMarkdown(
-  lines: string[],
-  s: MemoSection,
-  index: number,
-): void {
-  const confTag = s.confidence ? `  _(confidence: ${s.confidence})_` : "";
-  lines.push(`## ${index}. ${s.title}${confTag}`);
-  if (s.summary) lines.push(s.summary);
-  if (s.bridge && s.bridge.length > 0) {
-    lines.push("", "| Metric | Original anchor | Latest | Read-through |");
-    lines.push("| --- | --- | --- | --- |");
-    for (const row of s.bridge) {
-      lines.push(
-        `| ${escapePipe(row.metric)} | ${escapePipe(row.original ?? "—")} | ${escapePipe(row.latest ?? "—")} | ${escapePipe(row.readThrough ?? "—")} |`,
-      );
-    }
-  }
-  if (s.body && s.body !== s.summary) lines.push("", s.body);
-  if (s.bullets && s.bullets.length > 0) {
-    lines.push("");
-    for (const b of s.bullets) lines.push(`- ${b}`);
-  }
-  if (s.confidenceNote) {
-    lines.push("", `_${s.confidenceNote}_`);
-  }
-  if (s.sources.length > 0) {
-    lines.push("", "**Sources:**");
-    s.sources.forEach((src, si) => {
-      const extras = [
-        src.page ? `p.${src.page}` : null,
-        src.quote ? `"${src.quote}"` : null,
-      ]
-        .filter(Boolean)
-        .join(" — ");
-      lines.push(
-        `- ${humanSourceLabel(src.documentId, si)}${extras ? ` · ${extras}` : ""}`,
-      );
-    });
-  }
-  lines.push("");
-}
-
-function escapePipe(value: string): string {
-  return value.replace(/\|/g, "\\|");
 }
 
 function buildFilenameStem(memo: FollowUpMemo): string {

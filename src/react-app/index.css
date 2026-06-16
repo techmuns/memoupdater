@@ -172,10 +172,10 @@ body {
   background: var(--color-ink);
 }
 
-/* Phase 6C/6E: print stylesheet — FALLBACK path only (plain Ctrl+P or a
-   blocked popup). The primary Print button opens a dedicated memo-only
-   document (lib/memoPrint.ts), which is what should normally produce
-   the PDF.
+/* Print stylesheet — FALLBACK path only, for a plain browser Ctrl+P. The
+   Print BUTTON now prints the exact jsPDF memo (lib/memoPdf.ts) via a hidden
+   iframe, identical to Download PDF; this scoping only matters if a user
+   triggers the browser's own print on the app page.
 
    Implementation note: this MUST use the visibility technique, not
    display. A descendant of a `display:none` ancestor can never be
