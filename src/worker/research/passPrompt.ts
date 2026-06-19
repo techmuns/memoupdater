@@ -94,8 +94,9 @@ const PASS_BLOCKS: Record<ResearchPassId, string> = {
     "Target 1–3 findings. Quote exact multiples / prices verbatim from the source — never paraphrase numerically.",
     "Report a SINGLE representative CURRENT trailing P/E and a SINGLE forward P/E (and likewise for EV/EBITDA) — NEVER a wide nonsensical range (e.g. '46x–186x'). If sources disagree, use the most recent primary/market-data value and state the basis (consolidated; reported vs adjusted EPS).",
     "Capture, where sourced, the inputs the valuation bridge needs: current price, market cap, enterprise value, trailing AND forward P/E, trailing AND forward EV/EBITDA, P/B, FCF yield, 52-WEEK RANGE; the absolute return since the memo date with its ANNUALISED (CAGR) figure and the relevant INDEX return over the same window; and 1–2 key PEER multiples for the peer gap.",
-    "Verify the current price against a market-data source and SANITY-CHECK it against the 52-week range — explicitly flag (impact: watch) any price outside the 52-week high/low you found.",
-    "If current price or multiple cannot be source-verified, say 'current price not source-verified in this pass' in the finding's summary. Do NOT invent numbers.",
+    "CURRENT-PRICE DISCIPLINE (HARD): only quote a 'current price' if you got it from a PRIMARY exchange feed (BSE/NSE/SEC/SEBI) or an explicit official-source filing with a date stamp. Aggregator screens (Screener, Tickertape, Trendlyne, Moneycontrol), broker notes and press are NOT primary for live price. If you only have aggregator/press evidence, the finding must say 'current price not primary-verified — refresh required' and contain NO live-price number. Same rule applies to current market cap, EV, trailing P/E and EV/EBITDA — they are price-derived and must NOT be quoted as 'current' unless the price was primary.",
+    "Sanity-check any sourced price against the 52-week range and flag (impact: watch) anything outside it.",
+    "If current price or multiple cannot be primary-verified, say 'current price not primary-verified — refresh required' in the finding's summary. Do NOT invent numbers and do NOT pass through stale aggregator prices as if they were live.",
   ].join("\n"),
   risks_competition: [
     "Pass: RISKS / MACRO / COMPETITION / AI.",

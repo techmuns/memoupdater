@@ -93,10 +93,15 @@ function drawHr(ctx: DocCtx, weight = 0.4): void {
   ctx.y += 2;
 }
 
-function drawBridge(ctx: DocCtx, rows: NonNullable<MemoSection["bridge"]>, dense: boolean): void {
+function drawBridge(
+  ctx: DocCtx,
+  rows: NonNullable<MemoSection["bridge"]>,
+  dense: boolean,
+  scale = 1,
+): void {
   if (rows.length === 0) return;
   const { doc } = ctx;
-  const cellSize = dense ? 7.5 : 8;
+  const cellSize = (dense ? 7.5 : 8) * scale;
   const lineGap = cellSize * 0.46; // baseline-to-baseline within a cell
   // Box-model paddings in MILLIMETRES (absolute), so a tall wrapped cell can
   // never visually collide with the row above/below regardless of the font
@@ -104,8 +109,8 @@ function drawBridge(ctx: DocCtx, rows: NonNullable<MemoSection["bridge"]>, dense
   // ~3.6 pt between the descender of a wrapped line and the row divider —
   // close enough to read as an overlap. 1.8 mm top + 1.6 mm bottom gives a
   // comfortable, consistent clearance.
-  const topPad = 1.8;
-  const botPad = 1.6;
+  const topPad = 1.8 * scale;
+  const botPad = 1.6 * scale;
   const ascent = cellSize * 0.30; // baseline-from-row-top offset (a bit under the cap height)
   // Column layout: Metric | Original | Latest | Read-through (sum = CONTENT_W).
   const widths = [
@@ -234,24 +239,64 @@ function signalLabel(signal: NonNullable<MemoSection["signal"]>): string {
   }
 }
 
+// Hard cap on the final printed memo. EVERY company, EVERY AMC, every memo
+// must fit. We enforce it by rendering at progressively denser typography
+// until the page count satisfies it.
+const MAX_PAGES = 3;
+
+// Tiered density. Each tier nudges fonts and margins tighter; the outer
+// builder walks the tiers until the rendered memo fits MAX_PAGES.
+interface DensityTier {
+  label: string;
+  dense: boolean; // controls per-section "dense" branches
+  scale: number; // additional uniform shrink applied on top of dense=true
+  manualChecksCap: number;
+}
+const DENSITY_TIERS: readonly DensityTier[] = [
+  { label: "comfortable", dense: false, scale: 1.0, manualChecksCap: 5 },
+  { label: "dense", dense: true, scale: 1.0, manualChecksCap: 4 },
+  { label: "tight", dense: true, scale: 0.94, manualChecksCap: 3 },
+  { label: "max-compress", dense: true, scale: 0.88, manualChecksCap: 2 },
+];
+
 export async function buildMemoPdf(
   memo: FollowUpMemo,
   opts: BuildMemoPdfOptions = {},
 ): Promise<Blob> {
-  // Adaptive density — keeps a long memo inside the 3-page budget. The
-  // promoted valuation + financials panels count toward the budget so a
-  // content-heavy memo compresses automatically.
   const panels = selectPrintedPanels(memo);
-  // Lowered from 9k → 7.5k: the richer section content + the now-spacier,
-  // more-readable layout mean a heavy memo should switch to the compact
-  // typography sooner to hold the 3-page budget.
-  const dense = visibleCharCount(memo, panels) > 7_500;
+  // Pre-pick a starting tier from a char-count heuristic, then upgrade tiers
+  // until the rendered output fits the 3-page budget. The retry is cheap
+  // (jsPDF is in-memory, no I/O) and bounds the outcome regardless of how
+  // verbose the model's section text is.
+  const chars = visibleCharCount(memo, panels);
+  const startIdx = chars > 7_500 ? 1 : 0;
+  let lastBlob: Blob | null = null;
+  for (let i = startIdx; i < DENSITY_TIERS.length; i++) {
+    const tier = DENSITY_TIERS[i];
+    const { doc, pageCount } = await buildMemoPdfAtTier(memo, panels, opts, tier);
+    lastBlob = doc.output("blob");
+    if (pageCount <= MAX_PAGES) return lastBlob;
+  }
+  // Even the tightest tier overflowed — return its output. (In practice we'd
+  // truncate further, but going below max-compress hurts readability more
+  // than a fourth page does.)
+  return lastBlob!;
+}
+
+async function buildMemoPdfAtTier(
+  memo: FollowUpMemo,
+  panels: MemoSection[],
+  opts: BuildMemoPdfOptions,
+  tier: DensityTier,
+): Promise<{ doc: jsPDF; pageCount: number }> {
+  const dense = tier.dense;
+  const s = tier.scale;
   const ctx = await newCtx(dense);
   const { doc } = ctx;
 
   // Header
   writeWrapped(ctx, memo.title, {
-    size: dense ? 13 : 14,
+    size: (dense ? 13 : 14) * s,
     bold: true,
   });
   const date = new Date(memo.generatedAt).toLocaleDateString("en-US", { dateStyle: "medium" });
@@ -261,63 +306,77 @@ export async function buildMemoPdf(
     "Confidential — internal research draft",
   ].filter(Boolean) as string[];
   writeWrapped(ctx, metaParts.join("  ·  "), {
-    size: 7.5,
+    size: 7.5 * s,
     color: [110, 116, 124],
-    lineGap: 3.2,
+    lineGap: 3.2 * s,
   });
   ctx.y += 1;
   drawHr(ctx, 0.6);
 
   // Core sections
-  memo.sections.forEach((s, i) => {
-    renderSection(ctx, s, i + 1, dense);
+  memo.sections.forEach((sec, i) => {
+    renderSection(ctx, sec, i + 1, dense, s);
   });
 
   // Promoted supplementary panels — valuation bridge + memo-vs-actual
   // financials, compact (table-first; full prose stays in the dashboard).
   if (panels.length > 0) {
-    ctx.y += dense ? 3 : 4;
+    ctx.y += (dense ? 3 : 4) * s;
     drawHr(ctx, 0.6);
     ctx.y += 0.5;
     writeWrapped(ctx, "VALUATION & FINANCIALS DETAIL", {
-      size: dense ? 8 : 8.5,
+      size: (dense ? 8 : 8.5) * s,
       bold: true,
       color: [67, 56, 202],
-      lineGap: dense ? 3.4 : 3.6,
+      lineGap: (dense ? 3.4 : 3.6) * s,
     });
-    ctx.y += dense ? 0.6 : 0.8;
+    ctx.y += (dense ? 0.6 : 0.8) * s;
     for (const p of panels) {
-      renderSupplementaryPanelCompact(ctx, p, dense);
+      renderSupplementaryPanelCompact(ctx, p, dense, s);
     }
   }
 
-  // Manual checks
-  if (memo.manualChecksRemaining && memo.manualChecksRemaining.length > 0) {
-    ctx.y += dense ? 3 : 4;
+  // Manual checks — capped per tier so a long list can't overflow the page
+  // budget. Truncated lines are surfaced as 'See dashboard for full list'.
+  const checks = memo.manualChecksRemaining ?? [];
+  if (checks.length > 0) {
+    ctx.y += (dense ? 3 : 4) * s;
     ensureRoom(ctx, 12);
     writeWrapped(ctx, "Manual checks remaining", {
-      size: dense ? 10 : 10.5,
+      size: (dense ? 10 : 10.5) * s,
       bold: true,
     });
     drawHeadingRule(ctx);
-    ctx.y += dense ? 1.2 : 1.6;
-    for (const m of memo.manualChecksRemaining) {
-      writeBullet(ctx, m, dense);
-      ctx.y += dense ? 0.5 : 0.7;
+    ctx.y += (dense ? 1.2 : 1.6) * s;
+    const cap = tier.manualChecksCap;
+    const shown = checks.slice(0, cap);
+    for (const m of shown) {
+      writeBullet(ctx, m, dense, s);
+      ctx.y += (dense ? 0.5 : 0.7) * s;
+    }
+    if (checks.length > cap) {
+      writeBullet(
+        ctx,
+        `…and ${checks.length - cap} more — see the dashboard for the full list.`,
+        dense,
+        s,
+      );
     }
   }
 
-  // Footer caveat on the last page
-  ensureRoom(ctx, 8);
+  // Footer caveat on the LAST page only — placed after content rendering so it
+  // sits on whichever page the doc ended on, not page 1.
+  const lastPage = doc.getNumberOfPages();
+  doc.setPage(lastPage);
   ctx.y = PAGE_H - MARGIN_BOTTOM - 6;
   drawHr(ctx, 0.3);
   writeWrapped(
     ctx,
     "Draft for research support — not investment advice; analyst sign-off required.  The full EPS-credibility bridge and per-section sources are available in the dashboard.",
-    { size: 7, color: [130, 135, 142] },
+    { size: 7 * s, color: [130, 135, 142] },
   );
 
-  return doc.output("blob");
+  return { doc, pageCount: doc.getNumberOfPages() };
 }
 
 // Draw the section/panel signal tag RIGHT-ALIGNED on the heading's first
@@ -357,11 +416,16 @@ function drawHeadingRule(ctx: DocCtx): void {
 // One bullet with a HANGING indent — the glyph sits at the margin and wrapped
 // lines align under the text, not under the bullet. Far more readable than the
 // old inline "• text" which wrapped back to the margin.
-function writeBullet(ctx: DocCtx, text: string, dense: boolean): void {
+function writeBullet(
+  ctx: DocCtx,
+  text: string,
+  dense: boolean,
+  scale = 1,
+): void {
   const { doc } = ctx;
-  const size = dense ? 8.5 : 9;
-  const lineGap = dense ? 4.2 : 4.5;
-  const indent = 4.0;
+  const size = (dense ? 8.5 : 9) * scale;
+  const lineGap = (dense ? 4.2 : 4.5) * scale;
+  const indent = 4.0 * scale;
   doc.setFontSize(size);
   doc.setFont("times", "normal");
   doc.setTextColor(40, 46, 56);
@@ -377,47 +441,53 @@ function writeBullet(ctx: DocCtx, text: string, dense: boolean): void {
   });
 }
 
-function renderSection(ctx: DocCtx, s: MemoSection, index: number, dense: boolean): void {
+function renderSection(
+  ctx: DocCtx,
+  s: MemoSection,
+  index: number,
+  dense: boolean,
+  scale = 1,
+): void {
   // Generous space before each section, then a heading + rule for a clean
   // top-of-section division.
-  ctx.y += dense ? 3 : 4;
-  ensureRoom(ctx, 14);
+  ctx.y += (dense ? 3 : 4) * scale;
+  ensureRoom(ctx, 14 * scale);
   const headingTop = ctx.y;
   const heading = `${String(index).padStart(2, "0")}  ${s.title}`;
-  writeWrapped(ctx, heading, { size: dense ? 11 : 11.5, bold: true });
+  writeWrapped(ctx, heading, { size: (dense ? 11 : 11.5) * scale, bold: true });
   drawSignalTag(ctx, s.signal, headingTop);
   drawHeadingRule(ctx);
   // drawHeadingRule already leaves a comfortable trailing gap; no extra advance.
 
   if (s.summary && s.summary !== s.body) {
     writeWrapped(ctx, s.summary, {
-      size: dense ? 9 : 9.5,
+      size: (dense ? 9 : 9.5) * scale,
       bold: true,
-      lineGap: dense ? 4.2 : 4.5,
+      lineGap: (dense ? 4.2 : 4.5) * scale,
     });
-    ctx.y += dense ? 1.4 : 1.8;
+    ctx.y += (dense ? 1.4 : 1.8) * scale;
   }
   if (s.bridge && s.bridge.length > 0) {
-    drawBridge(ctx, s.bridge, dense);
-    ctx.y += dense ? 1.2 : 1.6;
+    drawBridge(ctx, s.bridge, dense, scale);
+    ctx.y += (dense ? 1.2 : 1.6) * scale;
   }
   if (s.body) {
     writeWrapped(ctx, s.body, {
-      size: dense ? 8.5 : 9,
-      lineGap: dense ? 4.2 : 4.5,
+      size: (dense ? 8.5 : 9) * scale,
+      lineGap: (dense ? 4.2 : 4.5) * scale,
     });
   }
   if (s.bullets && s.bullets.length > 0) {
     // Clear gap before the key-points group so it reads as its own block.
-    ctx.y += dense ? 1.8 : 2.2;
+    ctx.y += (dense ? 1.8 : 2.2) * scale;
     for (const b of s.bullets) {
-      writeBullet(ctx, b, dense);
-      ctx.y += dense ? 0.8 : 1.0;
+      writeBullet(ctx, b, dense, scale);
+      ctx.y += (dense ? 0.8 : 1.0) * scale;
     }
   }
   // The generic "Research source 1 · 2 · 3" line is intentionally NOT printed
   // — it added clutter with no information. Full sources live in the dashboard.
-  ctx.y += dense ? 1.2 : 1.6;
+  ctx.y += (dense ? 1.2 : 1.6) * scale;
 }
 
 // Compact print of a promoted supplementary panel: title + signal + one
@@ -428,25 +498,29 @@ function renderSupplementaryPanelCompact(
   ctx: DocCtx,
   s: MemoSection,
   dense: boolean,
+  scale = 1,
 ): void {
-  ctx.y += dense ? 2.4 : 3;
-  ensureRoom(ctx, 16);
+  ctx.y += (dense ? 2.4 : 3) * scale;
+  ensureRoom(ctx, 16 * scale);
   const headingTop = ctx.y;
-  writeWrapped(ctx, s.title, { size: dense ? 10 : 10.5, bold: true });
+  writeWrapped(ctx, s.title, {
+    size: (dense ? 10 : 10.5) * scale,
+    bold: true,
+  });
   drawSignalTag(ctx, s.signal, headingTop);
   drawHeadingRule(ctx);
   if (s.summary && s.summary !== s.body) {
     writeWrapped(ctx, s.summary, {
-      size: dense ? 8.5 : 9,
+      size: (dense ? 8.5 : 9) * scale,
       bold: true,
-      lineGap: dense ? 4.0 : 4.3,
+      lineGap: (dense ? 4.0 : 4.3) * scale,
     });
-    ctx.y += dense ? 1.2 : 1.6;
+    ctx.y += (dense ? 1.2 : 1.6) * scale;
   }
   if (s.bridge && s.bridge.length > 0) {
-    drawBridge(ctx, s.bridge, dense);
+    drawBridge(ctx, s.bridge, dense, scale);
   }
-  ctx.y += dense ? 1.4 : 1.8;
+  ctx.y += (dense ? 1.4 : 1.8) * scale;
 }
 
 export async function downloadMemoPdf(
