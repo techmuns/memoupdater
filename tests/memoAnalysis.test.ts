@@ -60,6 +60,20 @@ describe("detectMemoWrittenOn", () => {
     );
     expect(r!.iso).toBe("2024-05-07");
   });
+
+  it("finds a date in the financial-summary block even when it sits deep in the doc", () => {
+    // Regression: the actual RateGain memo printed the date in the footer
+    // financial-summary block, ~5-6k chars in. The old 3000-char head window
+    // missed it and the UI showed "No memo date was extracted" even though
+    // the memo plainly had one.
+    const filler = "Beas Capital thesis on RateGain. ".repeat(200); // ~6.6k chars
+    const memo = `${filler}\n\n07-05-2024 CMP 670 EPS 24 Multiple 40x 45x FY26 Target price 960 1080 XIRR 20% 27% Upside 43% 61%`;
+    const r = detectMemoWrittenOn(memo);
+    expect(r).not.toBeNull();
+    expect(r!.iso).toBe("2024-05-07");
+    expect(r!.confidence).toBe("high");
+    expect(r!.reason).toMatch(/financial-summary/);
+  });
 });
 
 describe("computeMemoCoverage", () => {

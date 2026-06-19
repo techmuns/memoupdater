@@ -47,6 +47,7 @@ import { detectPeriodFromMemoText } from "../lib/periodDetect";
 import {
   computeMemoCoverage,
   detectMemoWrittenOn,
+  parseFreeFormDateToIso,
   type MemoCoverageSignals,
 } from "../lib/memoAnalysis";
 import {
@@ -491,9 +492,31 @@ function reducer(state: State, action: Action): State {
       return { ...state, gateTokenSet: action.value };
     case "START_UNDERSTAND":
       return { ...state, understanding: { kind: "loading" } };
-    case "SET_UNDERSTANDING":
+    case "SET_UNDERSTANDING": {
+      // Memo Intelligence is now the AUTHORITATIVE source for memo metadata
+      // — it reads the whole document via the LLM, vs. the cheap regex pass
+      // that only scans the head. When it gives us a publishedDate, parse
+      // it into ISO and overwrite detection.memoWrittenOn so the two UI
+      // surfaces can never contradict each other (the user's specific
+      // complaint: "No memo date was extracted" vs the Intelligence card
+      // showing "DATED 2024-05-07").
+      const llmPublishedDate = action.understanding.memo?.publishedDate;
+      const llmIso = parseFreeFormDateToIso(llmPublishedDate);
+      const detection = state.detection;
+      const nextDetection: PeriodDetectionResult | null =
+        detection && llmIso
+          ? {
+              ...detection,
+              memoWrittenOn: llmIso,
+              memoWrittenOnRaw: llmPublishedDate ?? detection.memoWrittenOnRaw,
+              memoWrittenOnConfidence: "high",
+              memoWrittenOnReason:
+                "extracted by Memo Intelligence (full-document LLM analysis)",
+            }
+          : detection;
       return {
         ...state,
+        detection: nextDetection,
         understanding: {
           kind: "success",
           understanding: action.understanding,
@@ -505,6 +528,7 @@ function reducer(state: State, action: Action): State {
         // expected path again.
         skipUnderstanding: false,
       };
+    }
     case "SET_UNDERSTANDING_ERROR":
       return {
         ...state,

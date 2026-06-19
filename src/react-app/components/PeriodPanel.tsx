@@ -21,10 +21,6 @@ export function PeriodPanel() {
   const showCompanyHint =
     Boolean(companyReason) &&
     (companyConfidence === "medium" || companyConfidence === "low");
-  const writtenOn = detection.memoWrittenOn;
-  const writtenOnConfidence = detection.memoWrittenOnConfidence;
-  const writtenOnReason = detection.memoWrittenOnReason;
-  const writtenOnRaw = detection.memoWrittenOnRaw;
 
   return (
     <Panel
@@ -43,20 +39,11 @@ export function PeriodPanel() {
         </div>
       }
     >
+      {/* The memo's WRITTEN-ON date is shown in the Memo Intelligence card
+          (which reads the whole document and is authoritative). This panel
+          is intentionally limited to research-window controls the user
+          may want to override. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field
-          label="Detected company"
-          value={eff.detectedCompany}
-          placeholder="(detected from memo or filename)"
-          onChange={(v) => setPeriodOverride({ detectedCompany: v })}
-        />
-        <Field
-          label="Memo written on (deterministic)"
-          value={writtenOn ?? ""}
-          placeholder="YYYY-MM-DD — extracted from memo header / 'Dated:' / 'as of'"
-          readOnly
-          monospace
-        />
         <Field
           label="Latest period (label only)"
           value={eff.periodLabel}
@@ -76,25 +63,13 @@ export function PeriodPanel() {
           onChange={(v) => setPeriodOverride({ researchStart: v || undefined })}
           monospace
         />
+        <Field
+          label="Detected company"
+          value={eff.detectedCompany}
+          placeholder="(detected from memo or filename)"
+          onChange={(v) => setPeriodOverride({ detectedCompany: v })}
+        />
       </div>
-
-      {writtenOn && writtenOnConfidence && (
-        <p className="mt-2 text-[11.5px] text-[var(--color-text-muted)] leading-snug">
-          Memo date confidence:{" "}
-          <span className="font-semibold">{writtenOnConfidence}</span>
-          {writtenOnRaw ? ` — matched on "${writtenOnRaw}"` : ""}
-          {writtenOnReason ? `. ${writtenOnReason}.` : "."}
-          {writtenOnConfidence !== "high" &&
-            " Override in the field above if the auto-pick is wrong."}
-        </p>
-      )}
-      {!writtenOn && (
-        <p className="mt-2 text-[11.5px] text-[var(--color-warning)] leading-snug inline-flex items-start gap-1.5">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          No memo date was extracted. Return-period and CAGR calculations will
-          be skipped until a date is available.
-        </p>
-      )}
 
       {showCompanyHint && (
         <p className="mt-3 text-[11.5px] text-[var(--color-text-muted)] leading-snug">

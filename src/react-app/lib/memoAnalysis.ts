@@ -63,13 +63,25 @@ const NUMERIC_DMY_RE = /\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b/g;
 //   2. Look in the FIRST ~1500 chars (header region) for a "DD Month YYYY"
 //      style date — these are almost always the publication date. High
 //      confidence.
-//   3. Fall back to any "Month DD, YYYY" / ISO / numeric date in the first
-//      ~3000 chars. Medium confidence.
-//   4. If only a "Month YYYY" or a numeric date with ambiguous order survives,
-//      return it at low confidence so the UI prompts the user to confirm.
+//   3. Look near a "financial summary" block (a date next to 'CMP', 'EPS',
+//      'Target price', 'Multiple' — a very common Indian buy-side layout).
+//      High confidence when matched.
+//   4. Fall back to any "Month DD, YYYY" / ISO / numeric date in the
+//      ~16k-char scan window. Medium confidence.
+//   5. If only a "Month YYYY" or a numeric date with ambiguous order
+//      survives, return it at low confidence so the UI prompts the user.
+//
+// (We intentionally also wire the LLM's `understanding.memo.publishedDate`
+// from MemoUnderstanding as the AUTHORITATIVE override once the deeper
+// analysis lands — see MemoProjectContext.SET_UNDERSTANDING — so this regex
+// is a fast first pass, not the final source of truth.)
 export function detectMemoWrittenOn(text: string): MemoWrittenOn | null {
   if (typeof text !== "string" || text.length === 0) return null;
-  const head = text.slice(0, 3000);
+  // Scan window: expanded from 3000 to 16k so dates printed in the
+  // financial-summary footer (a common Indian buy-side layout) aren't
+  // missed. Most memos are shorter than 16k chars; broker decks rarely
+  // longer.
+  const head = text.slice(0, 16_000);
 
   // 1. Anchored: "dated: 7 May 2024", "as of 07-05-2024"
   const anchored = scanAnchored(text);
@@ -79,19 +91,24 @@ export function detectMemoWrittenOn(text: string): MemoWrittenOn | null {
   const header = scanFirstNamedDate(head.slice(0, 1500));
   if (header) return header;
 
-  // 3. Any clear named date in the head
+  // 3. Financial-summary block — a date sitting beside CMP / EPS / Target
+  // price / Multiple. Almost always the memo publication date.
+  const finSummary = scanFinancialSummaryDate(head);
+  if (finSummary) return finSummary;
+
+  // 4. Any clear named date in the expanded window
   const named = scanFirstNamedDate(head);
   if (named) return named;
 
-  // 4. ISO
+  // 5. ISO
   const iso = scanFirstIso(head);
   if (iso) return iso;
 
-  // 5. Numeric DD-MM-YYYY (assumed)
+  // 6. Numeric DD-MM-YYYY (assumed)
   const num = scanFirstNumeric(head);
   if (num) return num;
 
-  // 6. Last resort: "Month YYYY" (e.g. "May 2024") → snap to 1st of month, low conf
+  // 7. Last resort: "Month YYYY" (e.g. "May 2024") → snap to 1st of month, low conf
   const my = scanMonthYear(head);
   if (my) return my;
 
@@ -123,6 +140,49 @@ function scanAnchored(text: string): MemoWrittenOn | null {
     if (numM) {
       const iso = isoFromNumericDMY(numM[1], numM[2], numM[3]);
       if (iso) return { iso, raw: numM[0], confidence: "high", reason: "explicit anchor + numeric date (DD-MM-YYYY assumed)" };
+    }
+  }
+  return null;
+}
+
+// Indian buy-side memos very often print the date inline with the financial
+// summary block: "07-05-2024 CMP 670 EPS 24 Multiple 40x 45x FY26 Target
+// price 960 ...". A date directly adjacent (within ~120 chars) to one of
+// these markers is almost certainly the publication date — promote it to
+// high confidence even though the standalone numeric scan would only give
+// medium.
+const FIN_SUMMARY_TOKENS = [
+  "CMP",
+  "EPS",
+  "Target price",
+  "Multiple",
+  "Forward P/E",
+  "XIRR",
+  "Upside",
+];
+function scanFinancialSummaryDate(window: string): MemoWrittenOn | null {
+  for (const token of FIN_SUMMARY_TOKENS) {
+    const idx = window.indexOf(token);
+    if (idx < 0) continue;
+    const ctx = window.slice(Math.max(0, idx - 120), idx + 120);
+    // Try forms in priority order.
+    const candidates: Array<{ re: RegExp; build: (m: RegExpExecArray) => string | null }> = [
+      { re: DMY_NAMED_RE, build: (m) => isoFromDMYNamed(m[1], m[2], m[3]) },
+      { re: MDY_NAMED_RE, build: (m) => isoFromMDYNamed(m[1], m[2], m[3]) },
+      { re: ISO_RE, build: (m) => isoFromIso(m[1], m[2], m[3]) },
+      { re: NUMERIC_DMY_RE, build: (m) => isoFromNumericDMY(m[1], m[2], m[3]) },
+    ];
+    for (const c of candidates) {
+      const m = matchOnce(c.re, ctx);
+      if (!m) continue;
+      const iso = c.build(m);
+      if (!iso) continue;
+      return {
+        iso,
+        raw: m[0],
+        confidence: "high",
+        reason: `date adjacent to financial-summary marker ("${token}")`,
+      };
     }
   }
   return null;
@@ -233,6 +293,39 @@ function pad2(n: number): string {
 }
 function pad4(n: number): string {
   return n < 1000 ? `0000${n}`.slice(-4) : `${n}`;
+}
+
+// Parse a free-form date string (typically MemoUnderstanding's
+// `memo.publishedDate`, which the LLM may emit as ISO, "7 May 2024", "May
+// 7, 2024", "07-05-2024", etc.) into ISO YYYY-MM-DD. Returns null on
+// anything we can't confidently parse. Reuses the same building blocks as
+// the document-scanning regex pass so the two paths stay consistent.
+export function parseFreeFormDateToIso(raw: string | undefined | null): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  // Try ISO first (most common LLM emission).
+  const iso = matchOnce(ISO_RE, trimmed);
+  if (iso) {
+    const out = isoFromIso(iso[1], iso[2], iso[3]);
+    if (out) return out;
+  }
+  const dmy = matchOnce(DMY_NAMED_RE, trimmed);
+  if (dmy) {
+    const out = isoFromDMYNamed(dmy[1], dmy[2], dmy[3]);
+    if (out) return out;
+  }
+  const mdy = matchOnce(MDY_NAMED_RE, trimmed);
+  if (mdy) {
+    const out = isoFromMDYNamed(mdy[1], mdy[2], mdy[3]);
+    if (out) return out;
+  }
+  const num = matchOnce(NUMERIC_DMY_RE, trimmed);
+  if (num) {
+    const out = isoFromNumericDMY(num[1], num[2], num[3]);
+    if (out) return out;
+  }
+  return null;
 }
 
 // ---------- COVERAGE SIGNALS --------------------------------------------
