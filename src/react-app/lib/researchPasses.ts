@@ -629,6 +629,7 @@ export function detectionToResearchDetectionInput(
     researchCurrent:
       detection?.researchCurrent ?? new Date().toISOString().slice(0, 7),
     assumptionNotes: detection?.assumptionNotes ?? [],
+    memoWrittenOn: detection?.memoWrittenOn,
   };
 }
 

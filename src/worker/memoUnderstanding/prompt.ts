@@ -86,7 +86,7 @@ export function buildUnderstandPrompt(
     "",
     "Mandatory extraction targets (omit only if genuinely absent from the memo):",
     "  - company identity (name, ticker, aliases, sector, geography);",
-    "  - broker, author, published date, period covered, report type;",
+    "  - broker, author, PUBLISHED DATE (extract carefully — every memo has one in a header, footer, or 'Dated:' / 'as of' anchor; emit as ISO YYYY-MM-DD when possible, else the literal as printed), period covered, report type;",
     "  - recommendation, target price, current price at memo, upside, time horizon;",
     "  - valuation framework (method, target multiple, target metric, implied EPS, target price, upside);",
     "  - core thesis with up to 5 thesis pillars;",

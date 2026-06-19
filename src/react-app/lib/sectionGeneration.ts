@@ -334,10 +334,11 @@ export function assembleMemo(args: AssembleMemoArgs): FollowUpMemo {
     const s = map.get(id);
     if (s) ordered.push(s);
   }
-  if (ordered.length !== CANONICAL_SECTION_IDS.length) {
-    throw new Error(
-      `assembleMemo: expected ${CANONICAL_SECTION_IDS.length} canonical sections, got ${ordered.length}`,
-    );
+  // Fewer-than-9 is OK now: the orchestrator may intentionally skip sections
+  // (e.g. Shareholding) when the original memo never covered the topic. We
+  // only require at least one core section so the assembled memo is non-empty.
+  if (ordered.length === 0) {
+    throw new Error("assembleMemo: at least one section is required");
   }
 
   // Split ordered into core sections and supplementary panels.
@@ -412,6 +413,12 @@ export interface RunSectionGenerationArgs {
   ) => void;
   startFromSectionId?: CanonicalSectionId;
   existingSections?: Partial<Record<CanonicalSectionId, MemoSection>>;
+  // Section ids the caller has decided to SKIP for this memo — typically
+  // because the original memo never covered the topic (e.g. shareholding).
+  // Skipped sections do not consume LLM calls, do not block completion, and
+  // simply do not appear in the final memo. The user's stated principle:
+  // "the follow-up should only contain what the original memo covered".
+  excludeSectionIds?: ReadonlyArray<CanonicalSectionId>;
 }
 
 export type RunSectionGenerationResult =
@@ -440,9 +447,11 @@ export async function runSectionGeneration(
   const startIdx = args.startFromSectionId
     ? Math.max(0, CANONICAL_SECTION_IDS.indexOf(args.startFromSectionId))
     : 0;
+  const excluded = new Set<CanonicalSectionId>(args.excludeSectionIds ?? []);
 
   for (let i = 0; i < CANONICAL_SECTION_IDS.length; i++) {
     const sectionId = CANONICAL_SECTION_IDS[i];
+    if (excluded.has(sectionId)) continue;
     if (i < startIdx && completed[sectionId]) continue;
 
     if (args.signal?.aborted) {

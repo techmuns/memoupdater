@@ -89,7 +89,7 @@ const PASS_BLOCKS: Record<ResearchPassId, string> = {
   valuation_market: [
     "Pass: VALUATION / MARKET MOVEMENT.",
     "Scope: find the CURRENT (today's) share price, recent valuation multiples (P/E, EV/EBITDA, P/B, FCF yield), market cap, share-price moves, broker target prices, peer-set comparisons.",
-    "CURRENT PRICE: if '# 1. Company identity' carries a 'Current price (server-fetched, live)' line, USE IT — that is the authoritative day's price (fetched server-side from Google Finance / Yahoo Finance / Screener), and you must NOT spend a web_search call trying to second-guess it. Spend the saved budget on multiples, peers and target-price discovery. ONLY when that line is absent should you do a live-quote web_search of the form '<companyName> share price' / '<ticker> stock price today'; acceptable live-quote sources are Google Finance, Yahoo Finance, NSE/BSE/SEC/SEBI quote pages, Bloomberg, Reuters, Tickertape, Screener.in. Capture price together with its as-of date.",
+    "AUTHORITATIVE LIVE DATA: if '# 1. Company identity' carries a 'Current price (server-fetched, live)' line — and/or a 'Fundamentals (server-fetched, live, do NOT re-verify)' line — those numbers are AUTHORITATIVE for this run. Do NOT spend a web_search call on the current price, trailing/forward EPS, trailing/forward P/E, market cap or 52-week range; use them verbatim and spend the saved budget on multiples-vs-peers, target-price discovery and segment-level reads. ONLY when those lines are absent should you do a live-quote web_search of the form '<companyName> share price' / '<ticker> stock price today'; acceptable live-quote sources are Google Finance, Yahoo Finance, NSE/BSE/SEC/SEBI quote pages, Bloomberg, Reuters, Tickertape, Screener.in. Capture price together with its as-of date.",
     "Preferred sources for the rest of the pass: Screener.in, Tickertape, Yahoo Finance, TradingView, WSJ market data, broker-note summaries from credible press.",
     "Categories: valuation, peers, broker_consensus.",
     "Target 1–3 findings. Quote exact multiples / prices verbatim from the source — never paraphrase numerically.",
@@ -144,15 +144,23 @@ function buildUserPrompt(req: ResearchPassRequest): string {
     lines.push(`- ${alias}`);
   }
   if (project.sector) lines.push(`- Sector: ${project.sector}`);
+  if (detection.memoWrittenOn) {
+    lines.push(`- Original memo written on (server-extracted): ${detection.memoWrittenOn}`);
+  }
   if (detection.currentPrice) {
-    // Server-fetched live quote. For the valuation_market pass this means:
-    // SKIP the live-price web_search — use this verbatim and spend the budget
-    // on multiples, peers and target prices. For other passes it's just
-    // context for any thesis-relevant rate-of-change observation.
+    // Server-fetched live quote + fundamentals. For the valuation_market
+    // pass this means SKIP the live-price + EPS + P/E + 52w web_searches —
+    // use these verbatim and spend the saved budget on multiples basis,
+    // peers and target-price discovery. For other passes it's just context.
     const cp = detection.currentPrice;
     lines.push(
       `- Current price (server-fetched, live — DO NOT search for an alternative): ${cp.display}  [value=${cp.value} ${cp.currency}, asOf=${cp.asOf}, source=${cp.source}]`,
     );
+    if (cp.fundamentalsDisplay) {
+      lines.push(
+        `- Fundamentals (server-fetched, live, do NOT re-verify): ${cp.fundamentalsDisplay}`,
+      );
+    }
   }
 
   lines.push("");

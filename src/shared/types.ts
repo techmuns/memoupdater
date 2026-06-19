@@ -387,6 +387,13 @@ export interface PeriodDetectionResult {
   detectedTicker?: string;
   companyDetectionConfidence?: DetectionConfidence;
   companyDetectionReason?: string;
+  // ISO YYYY-MM-DD of the memo's WRITTEN-ON date — extracted deterministically
+  // from the memo text by `detectMemoWrittenOn` (regex over named/anchored/
+  // numeric date forms). Drives the holding-period for return computations.
+  memoWrittenOn?: string;
+  memoWrittenOnRaw?: string;
+  memoWrittenOnConfidence?: DetectionConfidence;
+  memoWrittenOnReason?: string;
 }
 
 export interface ResearchDetectionInput {
@@ -395,6 +402,11 @@ export interface ResearchDetectionInput {
   researchStart?: string;
   researchCurrent: string;
   assumptionNotes?: string[];
+  // The memo's written-on date (ISO YYYY-MM-DD) — deterministic regex pick
+  // from the extracted text. Drives return-attribution math (today − written
+  // ⇒ holding period for CAGR / index-relative return) and the section
+  // headline ("stock +X% over Y months since the memo").
+  memoWrittenOn?: string;
   // Server-fetched live quote for the selected company, injected by the
   // memo-generation orchestrator just before research/section calls. When
   // present, the model uses this VERBATIM as the current price and does NOT
@@ -406,8 +418,18 @@ export interface CurrentPriceInput {
   value: number;          // raw numeric price as quoted
   currency: string;       // ISO-ish, e.g. "INR", "USD"
   asOf: string;           // ISO date the quote was fetched
-  source: string;         // human label, e.g. "Google Finance · NSE:RATEGAIN"
-  display: string;        // pre-formatted, e.g. "Rs 871.45 (as of 2026-06-19, Google Finance)"
+  source: string;         // human label, e.g. "Yahoo Finance · RATEGAIN.NS"
+  display: string;        // pre-formatted, e.g. "Rs 871.45 (as of 2026-06-19, Yahoo Finance)"
+  // Optional fundamentals that the same upstream returned alongside the
+  // price. The section prompt uses these verbatim — never re-searched.
+  trailingEps?: number;
+  forwardEps?: number;
+  trailingPE?: number;
+  forwardPE?: number;
+  marketCap?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+  fundamentalsDisplay?: string;
 }
 
 export type ResearchFindingCategory =
@@ -1133,6 +1155,20 @@ export type StockQuoteResponse =
       asOf: string;
       source: string;
       display: string;
+      // Optional fundamentals — present when the upstream source returns
+      // them (e.g. Yahoo v7 quote endpoint). Absent fields fall through to
+      // the model's existing search behaviour for that single number.
+      trailingEps?: number;
+      forwardEps?: number;
+      trailingPE?: number;
+      forwardPE?: number;
+      marketCap?: number;
+      fiftyTwoWeekHigh?: number;
+      fiftyTwoWeekLow?: number;
+      // Pre-formatted summary line ("Rs 871 (as of 2026-06-19); trailing EPS
+      // Rs 5.92, trailing P/E 46.2x; 52w 417.6–902"). When present the
+      // section prompt uses this verbatim as a single fundamentals block.
+      fundamentalsDisplay?: string;
     }
   | {
       ok: false;

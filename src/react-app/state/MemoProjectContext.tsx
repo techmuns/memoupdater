@@ -45,6 +45,11 @@ import {
 import { buildMemoDnaFromText } from "../lib/memoDna";
 import { detectPeriodFromMemoText } from "../lib/periodDetect";
 import {
+  computeMemoCoverage,
+  detectMemoWrittenOn,
+  type MemoCoverageSignals,
+} from "../lib/memoAnalysis";
+import {
   CANONICAL_SECTION_IDS,
   SECTION_TITLES,
   runSectionGeneration,
@@ -83,6 +88,11 @@ interface State {
   extractionStatus: ExtractionStatus;
   dna: MemoDNA | null;
   detection: PeriodDetectionResult | null;
+  // Coverage signals computed deterministically from the extracted text the
+  // moment the memo is uploaded. Drives "skip the Shareholding section if
+  // the memo never mentioned shareholding" — the user's explicit ask: the
+  // follow-up memo should only contain what the original memo covered.
+  memoCoverage: MemoCoverageSignals | null;
   periodOverride: PeriodOverride;
   research: ResearchFindings | null;
   researchState: ResearchGenerationState;
@@ -120,6 +130,7 @@ type Action =
       type: "SET_DNA_AND_DETECTION";
       dna: MemoDNA;
       detection: PeriodDetectionResult;
+      coverage: MemoCoverageSignals;
     }
   | { type: "SET_PERIOD_OVERRIDE"; override: PeriodOverride }
   | { type: "SET_RESEARCH_STATE"; state: ResearchGenerationState }
@@ -215,6 +226,7 @@ const initialState: State = {
   extractionStatus: "idle",
   dna: null,
   detection: null,
+  memoCoverage: null,
   periodOverride: {},
   research: null,
   researchState: { kind: "idle" },
@@ -263,6 +275,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         dna: action.dna,
         detection: action.detection,
+        memoCoverage: action.coverage,
         periodOverride: {
           // The user-picked company wins over the heuristic guess; period
           // detection (start month, label) is still trusted and applied.
@@ -637,8 +650,25 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
           text: result.text,
           filename: result.source.filename,
         });
-        const detection = detectPeriodFromMemoText(result.text);
-        dispatch({ type: "SET_DNA_AND_DETECTION", dna, detection });
+        // Period detector finds the memo's TIME ANCHOR (FY26 / Q3 FY25 / …);
+        // detectMemoWrittenOn finds the memo's WRITTEN-ON date (the day the
+        // author dated it). Both are deterministic regex passes — required
+        // before any LLM call so return-period math has a real start date and
+        // the period panel can show a confirmable field instead of "fiscal
+        // calendar unknown · LOW CONFIDENCE".
+        const periodDetection = detectPeriodFromMemoText(result.text);
+        const writtenOn = detectMemoWrittenOn(result.text);
+        const detection: PeriodDetectionResult = writtenOn
+          ? {
+              ...periodDetection,
+              memoWrittenOn: writtenOn.iso,
+              memoWrittenOnRaw: writtenOn.raw,
+              memoWrittenOnConfidence: writtenOn.confidence,
+              memoWrittenOnReason: writtenOn.reason,
+            }
+          : periodDetection;
+        const coverage = computeMemoCoverage(result.text);
+        dispatch({ type: "SET_DNA_AND_DETECTION", dna, detection, coverage });
       }
       return result;
     },
@@ -831,6 +861,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       baseDetection.detectedCompany = companyName;
       baseDetection.periodLabel = periodLabel;
       baseDetection.researchStart = state.periodOverride.researchStart;
+      baseDetection.memoWrittenOn = state.detection?.memoWrittenOn;
 
       // Issue the abort controller up here so the price fetch shares its
       // signal — cancelling research also cancels the in-flight quote.
@@ -1047,6 +1078,19 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       const userPrioritiesForGen = state.userResearchPriorities.trim()
         ? state.userResearchPriorities
         : undefined;
+      // Coverage-driven skip list — the user's principle: the follow-up
+      // memo should only contain what the original memo actually covered.
+      // Sections without a clear analog in the source memo are dropped.
+      const coverage = state.memoCoverage;
+      const exclude: CanonicalSectionId[] = [];
+      if (coverage && !coverage.shareholding) exclude.push("sec_shareholding");
+      // The supplementary panels carry the deepest valuation math — keep
+      // valuation_detail always on (it's the most-asked-for content), but
+      // skip the EPS bridge / forecasts-vs-actuals panels when the memo had
+      // no forecasts or valuation framework to anchor them to.
+      if (coverage && !coverage.forecasts) exclude.push("sup_eps_bridge");
+      if (coverage && !coverage.forecasts) exclude.push("sup_financials_actuals");
+
       const result = await runSectionGeneration({
         project: {
           id: state.dna.projectId,
@@ -1055,6 +1099,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
           sector: state.selectedCompany?.sector,
         },
         dna: state.dna,
+        excludeSectionIds: exclude,
         detection: periodLabel
           ? {
               detectedCompany: companyName,
@@ -1064,6 +1109,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
                 state.detection?.researchCurrent ??
                 new Date().toISOString().slice(0, 7),
               assumptionNotes: state.detection?.assumptionNotes ?? [],
+              memoWrittenOn: state.detection?.memoWrittenOn,
               currentPrice: livePriceForGen ?? undefined,
             }
           : undefined,
@@ -1147,6 +1193,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       state.understanding,
       state.userResearchPriorities,
       state.selectedCompany,
+      state.memoCoverage,
     ],
   );
 

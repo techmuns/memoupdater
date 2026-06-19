@@ -26,6 +26,14 @@ export async function fetchCurrentPrice(
       asOf: res.asOf,
       source: res.source,
       display: res.display,
+      trailingEps: res.trailingEps,
+      forwardEps: res.forwardEps,
+      trailingPE: res.trailingPE,
+      forwardPE: res.forwardPE,
+      marketCap: res.marketCap,
+      fiftyTwoWeekHigh: res.fiftyTwoWeekHigh,
+      fiftyTwoWeekLow: res.fiftyTwoWeekLow,
+      fundamentalsDisplay: res.fundamentalsDisplay,
     };
   } catch {
     return null;

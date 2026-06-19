@@ -275,6 +275,12 @@ function buildUserPrompt(req: GenerateMemoSectionRequest): string {
   lines.push(`- Ticker: ${project.ticker}`);
   lines.push(`- Company: ${project.companyName}`);
   if (project.sector) lines.push(`- Sector: ${project.sector}`);
+  if (detection?.memoWrittenOn) {
+    // Deterministic regex pick from the memo text — the actual day the
+    // original memo was written. Use this for return-period math (today
+    // − memoWrittenOn ⇒ holding period for CAGR / index-relative return).
+    lines.push(`- Original memo written on (server-extracted): ${detection.memoWrittenOn}`);
+  }
   if (detection?.currentPrice) {
     // Server-fetched live quote. Authoritative — the model must use its
     // display string verbatim and base all return / multiple math on its
@@ -283,6 +289,14 @@ function buildUserPrompt(req: GenerateMemoSectionRequest): string {
     lines.push(
       `- Current price (server-fetched, live): ${cp.display}  [value=${cp.value} ${cp.currency}, asOf=${cp.asOf}, source=${cp.source}]`,
     );
+    if (cp.fundamentalsDisplay) {
+      // Fundamentals fetched alongside the price (Yahoo v7 /quote): EPS,
+      // P/E, market cap, 52w range. Authoritative — use these verbatim;
+      // do not "verify" them via web_search.
+      lines.push(
+        `- Fundamentals (server-fetched, live, do NOT re-verify): ${cp.fundamentalsDisplay}`,
+      );
+    }
   }
   if (detection) {
     lines.push(`- Memo latest period: ${detection.periodLabel}`);

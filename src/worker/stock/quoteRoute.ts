@@ -58,22 +58,29 @@ export async function handleStockQuote(
   const signal = c.req.raw.signal;
   const today = new Date().toISOString().slice(0, 10);
 
-  // 1. Yahoo v8 chart — preferred (JSON, intraday-fresh, global coverage).
+  // 1. Yahoo v7 /quote — preferred. Returns price + trailing/forward EPS,
+  // trailing/forward P/E, market cap and 52-week range in a single JSON
+  // payload, so the model never has to "verify" any of these via web_search.
+  for (const sym of yahooSymbolsFor(ticker, exchangeHint, country)) {
+    const got = await tryYahooQuoteJson(sym, signal);
+    if (got) return c.json(buildOk(got, ticker, today));
+  }
+  // 2. Yahoo v8 chart — JSON fallback, price only.
   for (const sym of yahooSymbolsFor(ticker, exchangeHint, country)) {
     const got = await tryYahooChartJson(sym, signal);
     if (got) return c.json(buildOk(got, ticker, today));
   }
-  // 2. Stooq CSV — broad coverage, no auth.
+  // 3. Stooq CSV — broad coverage, no auth, price + recent close date.
   for (const sym of stooqSymbolsFor(ticker, exchangeHint, country)) {
     const got = await tryStooqCsv(sym, ticker, exchangeHint, country, signal);
     if (got) return c.json(buildOk(got, ticker, today));
   }
-  // 3. Google Finance HTML — readable when reachable.
+  // 4. Google Finance HTML — readable when reachable.
   for (const ex of googleExchangesFor(exchangeHint, country)) {
     const got = await tryGoogleFinanceHtml(ticker, ex, signal);
     if (got) return c.json(buildOk(got, ticker, today));
   }
-  // 4. Screener.in HTML — Indian ticker last-resort.
+  // 5. Screener.in HTML — Indian ticker last-resort.
   if (looksIndian(exchangeHint, country)) {
     const got = await tryScreenerHtml(ticker, signal);
     if (got) return c.json(buildOk(got, ticker, today));
@@ -97,11 +104,32 @@ interface RawQuote {
   price: number;
   currency: string;
   source: string;
+  trailingEps?: number;
+  forwardEps?: number;
+  trailingPE?: number;
+  forwardPE?: number;
+  marketCap?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
 }
 
 function buildOk(q: RawQuote, ticker: string, asOf: string): StockQuoteResponse {
   const displaySym = q.currency === "INR" ? "Rs " : `${q.currency} `;
   const display = `${displaySym}${formatPrice(q.price)} (as of ${asOf}, ${q.source})`;
+  // Compose a compact fundamentals summary the section prompt can use
+  // verbatim. Only mention fields the upstream actually returned.
+  const bits: string[] = [];
+  if (q.trailingEps != null) bits.push(`trailing EPS ${displaySym}${formatPrice(q.trailingEps)}`);
+  if (q.forwardEps != null) bits.push(`forward EPS ${displaySym}${formatPrice(q.forwardEps)}`);
+  if (q.trailingPE != null) bits.push(`trailing P/E ${q.trailingPE.toFixed(1)}x`);
+  if (q.forwardPE != null) bits.push(`forward P/E ${q.forwardPE.toFixed(1)}x`);
+  if (q.marketCap != null) bits.push(`mkt cap ${displaySym}${compactMoney(q.marketCap, q.currency)}`);
+  if (q.fiftyTwoWeekLow != null && q.fiftyTwoWeekHigh != null) {
+    bits.push(`52w ${formatPrice(q.fiftyTwoWeekLow)}–${formatPrice(q.fiftyTwoWeekHigh)}`);
+  }
+  const fundamentalsDisplay = bits.length > 0
+    ? `${display}; ${bits.join("; ")}`
+    : undefined;
   return {
     ok: true,
     ticker,
@@ -110,7 +138,27 @@ function buildOk(q: RawQuote, ticker: string, asOf: string): StockQuoteResponse 
     asOf,
     source: q.source,
     display,
+    trailingEps: q.trailingEps,
+    forwardEps: q.forwardEps,
+    trailingPE: q.trailingPE,
+    forwardPE: q.forwardPE,
+    marketCap: q.marketCap,
+    fiftyTwoWeekHigh: q.fiftyTwoWeekHigh,
+    fiftyTwoWeekLow: q.fiftyTwoWeekLow,
+    fundamentalsDisplay,
   };
+}
+
+function compactMoney(n: number, currency: string): string {
+  // Indian context → use Cr (10 mn) lakhs convention; otherwise SI (B/M).
+  if (currency === "INR") {
+    if (n >= 1e7) return `${(n / 1e7).toFixed(1)} cr`;
+    if (n >= 1e5) return `${(n / 1e5).toFixed(1)} lakh`;
+    return formatPrice(n);
+  }
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)} B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} M`;
+  return formatPrice(n);
 }
 
 function formatPrice(p: number): string {
@@ -186,7 +234,69 @@ function googleExchangesFor(
   return out;
 }
 
-// --- Source 1: Yahoo Finance v8 chart JSON --------------------------------
+// --- Source 1: Yahoo Finance v7 /quote JSON ------------------------------
+//
+// Returns price + fundamentals (EPS, P/E, market cap, 52w range) in one
+// call. Multiple symbols per call are supported but we use one at a time so
+// a 404 on a bad suffix doesn't poison the others.
+
+interface YahooQuoteShape {
+  quoteResponse?: {
+    result?: Array<{
+      symbol?: string;
+      regularMarketPrice?: number;
+      currency?: string;
+      trailingPE?: number;
+      forwardPE?: number;
+      epsTrailingTwelveMonths?: number;
+      epsForward?: number;
+      marketCap?: number;
+      fiftyTwoWeekHigh?: number;
+      fiftyTwoWeekLow?: number;
+    }>;
+    error?: unknown;
+  };
+}
+
+async function tryYahooQuoteJson(
+  sym: string,
+  signal: AbortSignal,
+): Promise<RawQuote | null> {
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
+    sym,
+  )}`;
+  const body = await safeFetchText(url, signal, "application/json");
+  if (!body) return null;
+  let json: YahooQuoteShape;
+  try {
+    json = JSON.parse(body) as YahooQuoteShape;
+  } catch {
+    return null;
+  }
+  const row = json.quoteResponse?.result?.[0];
+  const price =
+    typeof row?.regularMarketPrice === "number" ? row.regularMarketPrice : null;
+  const currency = typeof row?.currency === "string" ? row.currency : null;
+  if (price == null || !currency) return null;
+  return {
+    price,
+    currency,
+    source: `Yahoo Finance · ${sym}`,
+    trailingEps: numOrUndef(row?.epsTrailingTwelveMonths),
+    forwardEps: numOrUndef(row?.epsForward),
+    trailingPE: numOrUndef(row?.trailingPE),
+    forwardPE: numOrUndef(row?.forwardPE),
+    marketCap: numOrUndef(row?.marketCap),
+    fiftyTwoWeekHigh: numOrUndef(row?.fiftyTwoWeekHigh),
+    fiftyTwoWeekLow: numOrUndef(row?.fiftyTwoWeekLow),
+  };
+}
+
+function numOrUndef(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+// --- Source 2: Yahoo Finance v8 chart JSON --------------------------------
 
 interface YahooChartShape {
   chart?: {
