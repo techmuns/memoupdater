@@ -70,7 +70,11 @@ function writeWrapped(
   doc.setFontSize(opts.size);
   doc.setFont("times", opts.bold ? "bold" : "normal");
   doc.setTextColor(...(opts.color ?? [16, 20, 24]));
-  const lineGap = opts.lineGap ?? opts.size * 0.42;
+  // Default baseline-to-baseline = font size × 0.46 (was 0.42). The tighter
+  // value was just shy of safe — a wrapped 9.5pt summary's cap-height could
+  // catch the trailing rule of a heading above it; the looser default gives
+  // every block consistent breathing room without lengthening the memo.
+  const lineGap = opts.lineGap ?? opts.size * 0.46;
   // Standard-14 fonts are WinAnsi-only; transliterate ₹ and friends so the
   // text renders as real glyphs instead of "¹"-style garbage.
   const lines = doc.splitTextToSize(pdfSafeText(text), CONTENT_W);
@@ -93,16 +97,16 @@ function drawBridge(ctx: DocCtx, rows: NonNullable<MemoSection["bridge"]>, dense
   if (rows.length === 0) return;
   const { doc } = ctx;
   const cellSize = dense ? 7.5 : 8;
-  const lineGap = cellSize * 0.42; // baseline-to-baseline within a cell
-  // Box-model paddings so a tall wrapped cell never collides with the row
-  // above/below. The previous code drew the first baseline AT the row top
-  // (ascenders bled into the prior row) and put the border a fixed offset up —
-  // long cells overlapped. Now: first baseline sits topPad+ascent below the
-  // row top, the row is exactly tall enough for its tallest cell, and the
-  // divider is drawn at the row's true bottom.
-  const topPad = lineGap * 0.5;
-  const botPad = lineGap * 0.4;
-  const ascent = lineGap * 0.78;
+  const lineGap = cellSize * 0.46; // baseline-to-baseline within a cell
+  // Box-model paddings in MILLIMETRES (absolute), so a tall wrapped cell can
+  // never visually collide with the row above/below regardless of the font
+  // size. Previously these were fractions of lineGap; at 7.5pt that left only
+  // ~3.6 pt between the descender of a wrapped line and the row divider —
+  // close enough to read as an overlap. 1.8 mm top + 1.6 mm bottom gives a
+  // comfortable, consistent clearance.
+  const topPad = 1.8;
+  const botPad = 1.6;
+  const ascent = cellSize * 0.30; // baseline-from-row-top offset (a bit under the cap height)
   // Column layout: Metric | Original | Latest | Read-through (sum = CONTENT_W).
   const widths = [
     CONTENT_W * 0.22,
@@ -337,13 +341,17 @@ function drawSignalTag(
 }
 
 // Thin divider drawn directly under a section/panel heading — the main
-// "clear division between blocks" marker.
+// "clear division between blocks" marker. The trailing gap is sized in mm
+// (not as a fraction of a font size) so the next block's glyphs always clear
+// the rule by a comfortable margin regardless of typography.
 function drawHeadingRule(ctx: DocCtx): void {
-  ctx.y += 0.6;
+  ctx.y += 0.8;
   ctx.doc.setLineWidth(0.3);
   ctx.doc.setDrawColor(209, 213, 219);
   ctx.doc.line(MARGIN_X, ctx.y, PAGE_W - MARGIN_X, ctx.y);
-  ctx.y += 0.4;
+  // Trailing gap large enough that a 9.5pt summary's cap-height (~2.35mm)
+  // still has ~1mm clearance to the rule, instead of crossing it.
+  ctx.y += 3.4;
 }
 
 // One bullet with a HANGING indent — the glyph sits at the margin and wrapped
@@ -352,8 +360,8 @@ function drawHeadingRule(ctx: DocCtx): void {
 function writeBullet(ctx: DocCtx, text: string, dense: boolean): void {
   const { doc } = ctx;
   const size = dense ? 8.5 : 9;
-  const lineGap = dense ? 3.9 : 4.2;
-  const indent = 3.8;
+  const lineGap = dense ? 4.2 : 4.5;
+  const indent = 4.0;
   doc.setFontSize(size);
   doc.setFont("times", "normal");
   doc.setTextColor(40, 46, 56);
@@ -379,32 +387,32 @@ function renderSection(ctx: DocCtx, s: MemoSection, index: number, dense: boolea
   writeWrapped(ctx, heading, { size: dense ? 11 : 11.5, bold: true });
   drawSignalTag(ctx, s.signal, headingTop);
   drawHeadingRule(ctx);
-  ctx.y += dense ? 1.4 : 1.8;
+  // drawHeadingRule already leaves a comfortable trailing gap; no extra advance.
 
   if (s.summary && s.summary !== s.body) {
     writeWrapped(ctx, s.summary, {
       size: dense ? 9 : 9.5,
       bold: true,
-      lineGap: dense ? 3.9 : 4.2,
+      lineGap: dense ? 4.2 : 4.5,
     });
-    ctx.y += dense ? 0.8 : 1.0;
+    ctx.y += dense ? 1.4 : 1.8;
   }
   if (s.bridge && s.bridge.length > 0) {
     drawBridge(ctx, s.bridge, dense);
-    ctx.y += dense ? 0.6 : 0.8;
+    ctx.y += dense ? 1.2 : 1.6;
   }
   if (s.body) {
     writeWrapped(ctx, s.body, {
       size: dense ? 8.5 : 9,
-      lineGap: dense ? 3.9 : 4.2,
+      lineGap: dense ? 4.2 : 4.5,
     });
   }
   if (s.bullets && s.bullets.length > 0) {
     // Clear gap before the key-points group so it reads as its own block.
-    ctx.y += dense ? 1.4 : 1.8;
+    ctx.y += dense ? 1.8 : 2.2;
     for (const b of s.bullets) {
       writeBullet(ctx, b, dense);
-      ctx.y += dense ? 0.5 : 0.7;
+      ctx.y += dense ? 0.8 : 1.0;
     }
   }
   // The generic "Research source 1 · 2 · 3" line is intentionally NOT printed
@@ -427,19 +435,18 @@ function renderSupplementaryPanelCompact(
   writeWrapped(ctx, s.title, { size: dense ? 10 : 10.5, bold: true });
   drawSignalTag(ctx, s.signal, headingTop);
   drawHeadingRule(ctx);
-  ctx.y += dense ? 1.2 : 1.6;
   if (s.summary && s.summary !== s.body) {
     writeWrapped(ctx, s.summary, {
       size: dense ? 8.5 : 9,
       bold: true,
-      lineGap: dense ? 3.7 : 4.0,
+      lineGap: dense ? 4.0 : 4.3,
     });
-    ctx.y += dense ? 0.6 : 0.8;
+    ctx.y += dense ? 1.2 : 1.6;
   }
   if (s.bridge && s.bridge.length > 0) {
     drawBridge(ctx, s.bridge, dense);
   }
-  ctx.y += dense ? 1.0 : 1.4;
+  ctx.y += dense ? 1.4 : 1.8;
 }
 
 export async function downloadMemoPdf(
