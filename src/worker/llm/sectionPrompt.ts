@@ -88,7 +88,7 @@ const SECTION_BLOCKS: Record<CanonicalSectionId, string> = {
     "  3. Price implied by ORIGINAL multiple on LATEST reported earnings (when both numbers are sourced)",
     "  4. Memo revenue/EBITDA/EPS forecast vs reported (pick the single most important; show the absolute figure AND the % miss/beat)",
     "  5. Memo-vs-reported margin or growth (one row only — keep it tight)",
-    "  CURRENT-PRICE RULE (HARD). The valuation_market research pass is responsible for fetching today's price from a live-quote source (Google Finance, Yahoo Finance, NSE/BSE/SEC/SEBI quote pages, Bloomberg, Reuters, Tickertape, Screener.in, or similar). Use the price IT surfaced — do not search for or invent your own. ALWAYS include the price's as-of date in the Latest cell (e.g. 'Rs 871 (as of 2026-06-19)'). If the surfaced price is more than ~10 days old, append '(stale — refresh)'; you may still use it for return math but tag the date. If no current price is in the findings at all, the Latest cell MUST read exactly 'current price not located — refresh in dashboard' (no number), and the return-attribution sentence in (a) below MUST read 'return attribution requires a current price'.",
+    "  CURRENT-PRICE RULE (HARD, do not negotiate). If the user prompt's '# 1. Project' block carries a 'Current price (server-fetched, live)' line, that is the AUTHORITATIVE day's price — use its `display` string VERBATIM in the Latest cell of the Stock-price row and base ALL return % / CAGR / upside % math on its numeric value. Do NOT search the web for an alternative price and do NOT downgrade it; the server fetched it from Google Finance / Yahoo Finance / Screener and it is fresher than any web_search snippet you can produce. Only when that line is ABSENT may you use a price surfaced by research findings (always include the as-of date). If neither a server-fetched price NOR a sourced finding-price is available, the Latest cell MUST read 'current price not located — refresh in dashboard' and the return-attribution sentence in (a) below MUST read 'return attribution requires a current price'.",
     "  Sanity-check any sourced price against the 52-week range and flag a price that sits outside it.",
     "- `body`: 2–3 sentences covering (a)(b)(c):",
     "  (a) RETURN ATTRIBUTION — compute it from the numbers, do NOT guess the direction. If EPS grew X% and the stock returned Y% over the period, the multiple moved roughly (Y − X)%. The return is EARNINGS-LED when EPS growth ≈ the return and the multiple is flat or down; it is MULTIPLE-LED only when the multiple EXPANDED. A de-rating (multiple fell) means the return came from earnings DESPITE multiple contraction — say it exactly that way, never the reverse.",
@@ -192,7 +192,7 @@ const SECTION_BLOCKS: Record<CanonicalSectionId, string> = {
     "  7. Implied price using the ORIGINAL multiple on LATEST reported AND forward EPS (the memo's own tool applied today) vs the actual market price",
     "  8. Peer multiple gap (vs 1–2 key peers) when sourced",
     "  Report a SINGLE current and SINGLE forward multiple per row — never a wide range.",
-    "  CURRENT-PRICE RULE (HARD). Use the price the valuation_market pass surfaced from a live-quote source (Google Finance, Yahoo Finance, NSE/BSE/SEC/SEBI, Bloomberg, Reuters, Tickertape, Screener.in). ALWAYS include the as-of date in the Latest cell (e.g. 'Rs 871 (as of 2026-06-19)'). If only stale (>~10 days) prices were surfaced, append '(stale — refresh)' but you may still use them. If no current price was surfaced at all, the Latest cells for Stock Price, Market Cap, Enterprise Value, trailing P/E, trailing EV/EBITDA, P/B and FCF Yield MUST read 'current price not located — refresh in dashboard' and the attribution sentence in `body` MUST say 'return attribution requires a current price'.",
+    "  CURRENT-PRICE RULE (HARD). If the user prompt's '# 1. Project' block carries a 'Current price (server-fetched, live)' line, that is the AUTHORITATIVE day's price — use its `display` verbatim in the Stock Price row's Latest cell and base all current-multiple math on its numeric value. Do NOT search for an alternative. Only when ABSENT may you fall back to a price the research findings surfaced (always include the as-of date). If neither is available, the Latest cells for Stock Price, Market Cap, Enterprise Value, trailing P/E, trailing EV/EBITDA, P/B and FCF Yield MUST read 'current price not located — refresh in dashboard' and the attribution sentence in `body` MUST say 'return attribution requires a current price'.",
     "- `body`: 2 short paragraphs MAX. First: re-rating vs de-rating attribution, ending with the one-line 'X% of the return came from earnings growth and Y% from multiple expansion/contraction'. Second: whether the original target case still holds.",
     "- `bullets`: 2–3 max.",
     "- If no valuation/peers findings exist, say so in 2 sentences, set `confidence: low`, omit `bridge`, and stop.",
@@ -275,6 +275,15 @@ function buildUserPrompt(req: GenerateMemoSectionRequest): string {
   lines.push(`- Ticker: ${project.ticker}`);
   lines.push(`- Company: ${project.companyName}`);
   if (project.sector) lines.push(`- Sector: ${project.sector}`);
+  if (detection?.currentPrice) {
+    // Server-fetched live quote. Authoritative — the model must use its
+    // display string verbatim and base all return / multiple math on its
+    // numeric value. Renders before the period block so it can't be missed.
+    const cp = detection.currentPrice;
+    lines.push(
+      `- Current price (server-fetched, live): ${cp.display}  [value=${cp.value} ${cp.currency}, asOf=${cp.asOf}, source=${cp.source}]`,
+    );
+  }
   if (detection) {
     lines.push(`- Memo latest period: ${detection.periodLabel}`);
     if (detection.researchStart) {

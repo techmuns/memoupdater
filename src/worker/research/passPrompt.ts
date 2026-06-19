@@ -89,7 +89,7 @@ const PASS_BLOCKS: Record<ResearchPassId, string> = {
   valuation_market: [
     "Pass: VALUATION / MARKET MOVEMENT.",
     "Scope: find the CURRENT (today's) share price, recent valuation multiples (P/E, EV/EBITDA, P/B, FCF yield), market cap, share-price moves, broker target prices, peer-set comparisons.",
-    "MANDATORY FIRST ACTION — fetch today's price (do not skip): your FIRST web_search call must be a live-quote lookup of the form '<companyName> share price' or '<ticker> stock price today' (use both the long name and the exchange ticker). Acceptable live-quote sources for the current price are Google Finance, Yahoo Finance, NSE / BSE / SEC / SEBI official quote pages, Bloomberg, Reuters, Tickertape, Screener.in and similar market-data providers — these are explicitly OK for the CURRENT live price (they update intraday and are exactly what an analyst would consult). Capture the price together with its as-of date/time stamp.",
+    "CURRENT PRICE: if '# 1. Company identity' carries a 'Current price (server-fetched, live)' line, USE IT — that is the authoritative day's price (fetched server-side from Google Finance / Yahoo Finance / Screener), and you must NOT spend a web_search call trying to second-guess it. Spend the saved budget on multiples, peers and target-price discovery. ONLY when that line is absent should you do a live-quote web_search of the form '<companyName> share price' / '<ticker> stock price today'; acceptable live-quote sources are Google Finance, Yahoo Finance, NSE/BSE/SEC/SEBI quote pages, Bloomberg, Reuters, Tickertape, Screener.in. Capture price together with its as-of date.",
     "Preferred sources for the rest of the pass: Screener.in, Tickertape, Yahoo Finance, TradingView, WSJ market data, broker-note summaries from credible press.",
     "Categories: valuation, peers, broker_consensus.",
     "Target 1–3 findings. Quote exact multiples / prices verbatim from the source — never paraphrase numerically.",
@@ -144,6 +144,16 @@ function buildUserPrompt(req: ResearchPassRequest): string {
     lines.push(`- ${alias}`);
   }
   if (project.sector) lines.push(`- Sector: ${project.sector}`);
+  if (detection.currentPrice) {
+    // Server-fetched live quote. For the valuation_market pass this means:
+    // SKIP the live-price web_search — use this verbatim and spend the budget
+    // on multiples, peers and target prices. For other passes it's just
+    // context for any thesis-relevant rate-of-change observation.
+    const cp = detection.currentPrice;
+    lines.push(
+      `- Current price (server-fetched, live — DO NOT search for an alternative): ${cp.display}  [value=${cp.value} ${cp.currency}, asOf=${cp.asOf}, source=${cp.source}]`,
+    );
+  }
 
   lines.push("");
   lines.push("# 2. Research window");

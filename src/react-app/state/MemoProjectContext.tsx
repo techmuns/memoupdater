@@ -58,6 +58,7 @@ import {
   runResearchPasses,
 } from "../lib/researchPasses";
 import { buildMemoUnderstandingDigest } from "../lib/memoUnderstandingSummary";
+import { fetchCurrentPrice } from "../lib/livePrice";
 import { getLlmGateToken } from "../lib/llmGateToken";
 import { APP_BUILD_ID } from "@shared/buildId";
 
@@ -831,6 +832,23 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       baseDetection.periodLabel = periodLabel;
       baseDetection.researchStart = state.periodOverride.researchStart;
 
+      // Issue the abort controller up here so the price fetch shares its
+      // signal — cancelling research also cancels the in-flight quote.
+      researchAbort.current?.abort();
+      const controller = new AbortController();
+      researchAbort.current = controller;
+
+      // Server-fetch the day's live price so the research passes (and later
+      // section generation) don't have to rely on the LLM finding it via
+      // web_search — that path picked up stale news-article snippets. The
+      // helper is safe-by-construction (returns null on any failure).
+      const livePrice = await fetchCurrentPrice(
+        state.selectedCompany,
+        controller.signal,
+      );
+      if (livePrice) baseDetection.currentPrice = livePrice;
+      if (controller.signal.aborted) return;
+
       const understanding =
         state.understanding.kind === "success"
           ? state.understanding.understanding
@@ -864,9 +882,6 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
         perPassResultsRef.current = new Map();
       }
 
-      researchAbort.current?.abort();
-      const controller = new AbortController();
-      researchAbort.current = controller;
       dispatch({
         type: "START_RESEARCH_RUN",
         startedAt: new Date().toISOString(),
@@ -1010,6 +1025,18 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       });
       dispatch({ type: "SET_LLM_STATE", state: { kind: "loading" } });
 
+      // Server-fetch the day's live price. If the research orchestrator
+      // already injected one into baseDetection, this would normally be
+      // redundant — but section generation can be invoked independently
+      // (retry, run without prior research), so we always re-fetch. Best
+      // effort: null when unavailable, in which case the LLM falls back to
+      // its own search rules.
+      const livePriceForGen = await fetchCurrentPrice(
+        state.selectedCompany,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+
       const understandingForGen =
         state.understanding.kind === "success"
           ? state.understanding.understanding
@@ -1037,6 +1064,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
                 state.detection?.researchCurrent ??
                 new Date().toISOString().slice(0, 7),
               assumptionNotes: state.detection?.assumptionNotes ?? [],
+              currentPrice: livePriceForGen ?? undefined,
             }
           : undefined,
         research,

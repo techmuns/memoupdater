@@ -395,6 +395,19 @@ export interface ResearchDetectionInput {
   researchStart?: string;
   researchCurrent: string;
   assumptionNotes?: string[];
+  // Server-fetched live quote for the selected company, injected by the
+  // memo-generation orchestrator just before research/section calls. When
+  // present, the model uses this VERBATIM as the current price and does NOT
+  // search for an alternative. Absent => model falls back to its own search.
+  currentPrice?: CurrentPriceInput;
+}
+
+export interface CurrentPriceInput {
+  value: number;          // raw numeric price as quoted
+  currency: string;       // ISO-ish, e.g. "INR", "USD"
+  asOf: string;           // ISO date the quote was fetched
+  source: string;         // human label, e.g. "Google Finance · NSE:RATEGAIN"
+  display: string;        // pre-formatted, e.g. "Rs 871.45 (as of 2026-06-19, Google Finance)"
 }
 
 export type ResearchFindingCategory =
@@ -1084,6 +1097,46 @@ export type StockSearchResponse =
   | {
       ok: false;
       code: StockSearchErrorCode;
+      message: string;
+    };
+
+// ---------- Live stock quote (server-side fetch) ----------
+//
+// The Worker scrapes Google Finance / Yahoo Finance / Screener server-side
+// and returns a normalised live quote. The orchestrator calls this once per
+// memo run and injects the result into ResearchDetectionInput.currentPrice
+// so the LLM uses the day's price verbatim instead of searching for it.
+
+export interface StockQuoteRequest {
+  ticker: string;
+  // Optional exchange hint, used to pick the right Google Finance URL
+  // (RATEGAIN:NSE vs AAPL:NASDAQ). When omitted, the route tries the most
+  // likely exchange(s) for the country.
+  exchange?: string;
+  country?: string;
+  companyName?: string;
+}
+
+export type StockQuoteErrorCode =
+  | "invalid_request"
+  | "not_found"
+  | "upstream_error"
+  | "timeout"
+  | "provider_error";
+
+export type StockQuoteResponse =
+  | {
+      ok: true;
+      ticker: string;
+      price: number;
+      currency: string;
+      asOf: string;
+      source: string;
+      display: string;
+    }
+  | {
+      ok: false;
+      code: StockQuoteErrorCode;
       message: string;
     };
 

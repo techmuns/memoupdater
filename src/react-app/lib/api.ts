@@ -14,6 +14,8 @@ import type {
   ResearchPassResponse,
   ResearchUpdatesRequest,
   ResearchUpdatesResponse,
+  StockQuoteRequest,
+  StockQuoteResponse,
   StockSearchRequest,
   StockSearchResponse,
   VersionResponse,
@@ -196,6 +198,18 @@ export const api = {
   ) =>
     postJson<StockSearchResponse, StockSearchRequest>(
       "/api/stock/search",
+      req,
+      { signal },
+    ),
+  // Live price for the selected company. The Worker scrapes Google Finance /
+  // Yahoo Finance / Screener server-side so the LLM doesn't have to (and
+  // can't fabricate a stale snippet).
+  stockQuote: (
+    req: StockQuoteRequest,
+    signal?: AbortSignal,
+  ) =>
+    postJson<StockQuoteResponse, StockQuoteRequest>(
+      "/api/stock/quote",
       req,
       { signal },
     ),
