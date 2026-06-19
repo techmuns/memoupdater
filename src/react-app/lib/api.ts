@@ -4,6 +4,8 @@ import type {
   GenerateFollowUpMemoResponse,
   GenerateMemoSectionRequest,
   GenerateMemoSectionResponse,
+  GeneratePrioritiesAnswerRequest,
+  GeneratePrioritiesAnswerResponse,
   HealthResponse,
   LlmStatusResponse,
   MemoDNA,
@@ -148,6 +150,20 @@ export const api = {
   ) =>
     postJson<GenerateMemoSectionResponse, GenerateMemoSectionRequest>(
       "/api/generate/memo-section",
+      req,
+      {
+        signal,
+        headers: gateHeader(),
+      },
+    ),
+  // Dashboard-only Q&A — see worker/priorities/route.ts. The result lives
+  // ONLY on the dashboard; the downloadable PDF is unaffected.
+  generatePrioritiesAnswer: (
+    req: GeneratePrioritiesAnswerRequest,
+    signal?: AbortSignal,
+  ) =>
+    postJson<GeneratePrioritiesAnswerResponse, GeneratePrioritiesAnswerRequest>(
+      "/api/generate/priorities-answer",
       req,
       {
         signal,

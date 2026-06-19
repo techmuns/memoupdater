@@ -683,6 +683,62 @@ export type GenerateMemoSectionResponse =
       sectionId: CanonicalSectionId;
     };
 
+// ---------- Priorities-answer: dashboard-only, separate from the memo ----
+//
+// User-supplied priority questions ("are large MFs trimming?", "did the
+// auditor flag anything?") are answered HERE, not woven into the main memo.
+// The downloadable PDF is intentionally NOT shaped by these — the principle
+// is that the same generic high-quality memo ships every time, while any
+// PM-specific Q&A lives on the dashboard.
+
+export interface PrioritiesAnswerItem {
+  question: string;
+  answer: string;
+  confidence?: MemoConfidence;
+  sources?: SourceReference[];
+}
+
+export interface PrioritiesAnswer {
+  generatedAt: string;
+  items: PrioritiesAnswerItem[];
+}
+
+export interface GeneratePrioritiesAnswerRequest {
+  project: {
+    id: string;
+    ticker: string;
+    companyName: string;
+    sector?: string;
+  };
+  dna: MemoDNA;
+  detection?: ResearchDetectionInput;
+  research: ResearchFindings | null;
+  memoUnderstandingDigest?: MemoUnderstandingDigest;
+  userPriorities: string;
+  initialMemoId?: string;
+}
+
+export type GeneratePrioritiesAnswerResponse =
+  | {
+      ok: true;
+      answer: PrioritiesAnswer;
+      providerMetadata: LlmProviderMetadata;
+      warnings: LlmGenerationWarning[];
+    }
+  | {
+      ok: false;
+      code: LlmGenerationErrorCode;
+      message: string;
+      providerName?: LlmProviderName;
+      modelUsed?: string;
+    };
+
+export type PrioritiesAnswerState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "success"; answer: PrioritiesAnswer }
+  | { kind: "error"; code: LlmGenerationErrorCode; message: string };
+
 export type SectionRunStatus = "pending" | "running" | "success" | "failed";
 
 export interface SectionRunState {

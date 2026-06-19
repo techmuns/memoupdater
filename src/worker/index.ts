@@ -52,6 +52,7 @@ import { handleResearchPass } from "./research/passRoute";
 import { handleMemoUnderstand } from "./memoUnderstanding/route";
 import { handleStockSearch } from "./stock/searchRoute";
 import { handleStockQuote } from "./stock/quoteRoute";
+import { handlePrioritiesAnswer } from "./priorities/route";
 import { buildSectionPrompt } from "./llm/sectionPrompt";
 import { isCanonicalSectionId } from "@shared/sectionIds";
 import { MEMO_SECTION_OPENAI_SCHEMA } from "./llm/sectionSchema";
@@ -374,6 +375,11 @@ app.post("/api/generate/follow-up-memo", async (c) => {
 // Each call emits ONE MemoSection — small input, small output, well under
 // the 60 s timeout. Per-section retry-compact is driven by the frontend
 // orchestrator (the worker just honors the `retryCompact` flag in the body).
+
+// Dashboard-only Q&A. Answers the user's priority questions in a separate
+// route so the main memo body stays generic and unaffected by per-PM asks.
+app.post("/api/generate/priorities-answer", (c) => handlePrioritiesAnswer(c));
+
 app.post("/api/generate/memo-section", async (c) => {
   const declaredLength = Number(c.req.header("content-length") ?? "0");
   if (declaredLength > MAX_BODY_BYTES) {
