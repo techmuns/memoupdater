@@ -23,8 +23,6 @@ import { Panel } from "../components/ui/Panel";
 import { UploadSlot } from "../components/ui/UploadSlot";
 import { ExtractionNotice } from "../components/ui/ExtractionNotice";
 import { CompanySearch } from "../components/CompanySearch";
-import { PrivacyDisclosure } from "../components/PrivacyDisclosure";
-import { PeriodPanel } from "../components/PeriodPanel";
 import { ResearchFindingsCard } from "../components/ResearchFindingsCard";
 import { MemoReview } from "../components/MemoReview";
 import { MemoMissionTracker } from "../components/MemoMissionTracker";
@@ -218,7 +216,11 @@ export function WorkspacePage() {
         disabled={state.selectedCompany === null}
         disabledHint="Use the company search above to choose the subject company, then the memo upload unlocks."
       />
-      <PrivacyDisclosure variant="local" />
+      {/* The "Step 2: Detected memo period" panel and the "Extraction runs
+          locally" disclosure used to render here. Both removed: the panel
+          duplicates info already in Memo Intelligence + the company picker;
+          the disclosure adds no decision value. The orchestrators continue
+          to use auto-detected period values via the `??` fallback. */}
       {/* The full extracted text feeds DNA / period detection / the LLM; we no
           longer print the raw text layer (redundant with Memo Intelligence +
           the "Memo loaded" tile). This only surfaces extraction problems. */}
@@ -227,8 +229,9 @@ export function WorkspacePage() {
         result={state.extraction}
       />
 
-      {/* Step 2 — Detected period */}
-      {dnaReady && <PeriodPanel />}
+      {/* Step 2 — Detected period: removed; Memo Intelligence shows date,
+          period, company, target etc. on its own, and the orchestrators use
+          auto-detected values when no manual override is set. */}
 
       {/* Phase 6A: Memo Intelligence Snapshot. Sits between Step 2
           (Detected period) and Step 3 (Research) so the user can verify
@@ -277,7 +280,6 @@ export function WorkspacePage() {
             ) : null
           }
         >
-          <PrivacyDisclosure variant="research" />
 
           {gateBlocking ? (
             <SetupRequiredPanel
