@@ -26,8 +26,6 @@ import { CompanySearch } from "../components/CompanySearch";
 import { ResearchFindingsCard } from "../components/ResearchFindingsCard";
 import { MemoReview } from "../components/MemoReview";
 import { MemoMissionTracker } from "../components/MemoMissionTracker";
-import { MemoUnderstandingCard } from "../components/MemoUnderstandingCard";
-import { ReadinessStrip } from "../components/ReadinessStrip";
 import { MemoCompletionBanner } from "../components/MemoCompletionBanner";
 import { UserPrioritiesPanel } from "../components/UserPrioritiesPanel";
 import { deriveMissionTrackerSteps } from "../lib/missionTrackerState";
@@ -36,6 +34,10 @@ import {
   selectTasksForPass,
 } from "../lib/memoUnderstandingSummary";
 import { useMemoProject } from "../state/MemoProjectContext";
+import type {
+  MissionSubTask,
+} from "../components/MemoMissionTracker";
+import type { MissionStepId } from "../lib/missionTrackerState";
 
 // Phase 6D: anchors that match these bare category names alone are too
 // generic to print as "Validating: X". When this matches, the
@@ -57,8 +59,6 @@ export function WorkspacePage() {
     retryFailedSection,
     retryFullMemo,
     startOver,
-    rerunMemoUnderstanding,
-    skipMemoUnderstanding,
     setUserResearchPriorities,
   } = useMemoProject();
 
@@ -164,6 +164,38 @@ export function WorkspacePage() {
     ],
   );
 
+  // Live sub-task lists for the workflow tracker — the "tick · tick · tick"
+  // analyst-facing progress. We map each per-pass / per-section status onto
+  // the tracker's pending/running/complete/failed enum so each step shows
+  // exactly what's being done right now.
+  const trackerSubTasks = useMemo<Partial<Record<MissionStepId, MissionSubTask[]>>>(
+    () => ({
+      research: state.researchProgress.passes.map<MissionSubTask>((p) => ({
+        label: p.title,
+        status:
+          p.status === "success"
+            ? "complete"
+            : p.status === "running"
+              ? "running"
+              : p.status === "failed"
+                ? "failed"
+                : "pending",
+      })),
+      generate: state.progress.sections.map<MissionSubTask>((s) => ({
+        label: s.title,
+        status:
+          s.status === "success"
+            ? "complete"
+            : s.status === "running"
+              ? "running"
+              : s.status === "failed"
+                ? "failed"
+                : "pending",
+      })),
+    }),
+    [state.researchProgress.passes, state.progress.sections],
+  );
+
   const showIntroHero = state.initialFile === null;
 
   return (
@@ -183,21 +215,17 @@ export function WorkspacePage() {
         />
       )}
 
-      {/* Workflow progress rail — always visible, derived from existing context. */}
-      <MemoMissionTracker steps={missionSteps} />
-
-      {/* Workbench readiness — always visible, derived from existing context. */}
-      <ReadinessStrip
-        llmProviderStatus={state.llmProviderStatus}
-        gateBlocking={gateBlocking}
-        extraction={state.extraction}
-        research={state.research}
-        researchState={state.researchState}
-        researchProgress={state.researchProgress}
-        generatedMemo={state.generatedMemo}
-        llm={state.llm}
-        memoProgress={state.progress}
-      />
+      {/* Layout (per analyst request):
+            1. Company picker
+            2. Upload
+            3. Workflow progress — moved HERE (was at the top); now shows
+               live tick-by-tick sub-tasks for research / generate
+            4. Research panel  →  Generate panel  →  Review
+          The old "Workbench readiness" strip and "Memo Intelligence"
+          card are no longer rendered — the analyst doesn't need a
+          summary of their own memo, and the readiness diagnostics added
+          no decision value. (Memo Understanding still runs in the
+          background; only the UI block was removed.) */}
 
       {/* Step 1 — Company picker. Gates the upload so the project identity is
           chosen explicitly instead of being heuristically (and sometimes
@@ -229,21 +257,17 @@ export function WorkspacePage() {
         result={state.extraction}
       />
 
-      {/* Step 2 — Detected period: removed; Memo Intelligence shows date,
-          period, company, target etc. on its own, and the orchestrators use
-          auto-detected values when no manual override is set. */}
-
-      {/* Phase 6A: Memo Intelligence Snapshot. Sits between Step 2
-          (Detected period) and Step 3 (Research) so the user can verify
-          the AI understood the memo before research kicks off. */}
-      {dnaReady && (
-        <MemoUnderstandingCard
-          state={state.understanding}
-          providerNotReady={!llmReady || !researchAvailable}
-          gateBlocking={gateBlocking}
-          onRerun={() => void rerunMemoUnderstanding()}
-          onEmergencySkip={skipMemoUnderstanding}
-          skipUnderstanding={state.skipUnderstanding}
+      {/* Step 3 — Workflow progress (moved down from the top). Replaces the
+          old Memo Intelligence card in this slot. Renders only once the
+          memo is loaded so the rail isn't sitting empty above the upload.
+          The Research and Generate steps expand into live sub-task ticks
+          (one per research pass / per memo section). Memo Understanding
+          still runs in the background to feed downstream prompts — it
+          just isn't surfaced as a separate UI panel any more. */}
+      {state.initialFile && (
+        <MemoMissionTracker
+          steps={missionSteps}
+          subTasks={trackerSubTasks}
         />
       )}
 

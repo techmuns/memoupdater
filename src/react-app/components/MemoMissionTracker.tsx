@@ -2,6 +2,7 @@ import {
   Check,
   Crosshair,
   FileCheck2,
+  Loader2,
   Search,
   Sparkles,
   UploadCloud,
@@ -10,9 +11,12 @@ import {
 import { cn } from "../lib/cn";
 import type { MissionStep, MissionStepId } from "../lib/missionTrackerState";
 
-// Phase 5I: workflow-progress rail. Five small step nodes with a thin
-// connector that fills as steps complete. Professional copy only —
-// rendered eyebrow is "Workflow progress" (NOT "mission").
+// Workflow-progress rail — the live "tick · tick · tick" the analyst watches.
+// Each top-level step shows pending / active / complete; the Research and
+// Generate steps also expand into a per-sub-task list (the 6 research passes
+// and the up-to-9 memo sections) so the user sees real-time progress instead
+// of one big spinner.
+
 const ICONS: Record<MissionStepId, LucideIcon> = {
   upload: UploadCloud,
   detect: Crosshair,
@@ -21,11 +25,24 @@ const ICONS: Record<MissionStepId, LucideIcon> = {
   review: FileCheck2,
 };
 
-interface MemoMissionTrackerProps {
-  steps: MissionStep[];
+// Live sub-task per step. We only show sub-tasks for steps that have any.
+export type SubTaskStatus = "pending" | "running" | "complete" | "failed";
+export interface MissionSubTask {
+  label: string;
+  status: SubTaskStatus;
 }
 
-export function MemoMissionTracker({ steps }: MemoMissionTrackerProps) {
+interface MemoMissionTrackerProps {
+  steps: MissionStep[];
+  // Optional per-step sub-task lists. Keys are MissionStepId. When present
+  // the step's panel renders a tick list below the headline label.
+  subTasks?: Partial<Record<MissionStepId, MissionSubTask[]>>;
+}
+
+export function MemoMissionTracker({
+  steps,
+  subTasks,
+}: MemoMissionTrackerProps) {
   const completedCount = steps.filter((s) => s.status === "complete").length;
   return (
     <section
@@ -40,35 +57,47 @@ export function MemoMissionTracker({ steps }: MemoMissionTrackerProps) {
           {completedCount} of {steps.length} complete
         </div>
       </header>
-      <ol className="grid grid-cols-1 md:grid-cols-5 gap-3 md:gap-0 relative">
+      <ol className="space-y-3">
         {steps.map((step, i) => (
-          <li key={step.id} className="relative">
-            {i < steps.length - 1 && (
-              <span
-                aria-hidden
-                className={cn(
-                  "hidden md:block absolute top-5 left-1/2 right-0 h-[2px] -translate-y-1/2 transition-colors",
-                  step.status === "complete"
-                    ? "bg-[var(--color-ink)]"
-                    : "bg-[var(--color-border)]",
-                )}
-                style={{ width: "calc(100% - 2.5rem)" }}
-              />
-            )}
-            <StepNode step={step} />
-          </li>
+          <StepRow
+            key={step.id}
+            step={step}
+            isLast={i === steps.length - 1}
+            subTasks={subTasks?.[step.id]}
+          />
         ))}
       </ol>
     </section>
   );
 }
 
-function StepNode({ step }: { step: MissionStep }) {
+function StepRow({
+  step,
+  isLast,
+  subTasks,
+}: {
+  step: MissionStep;
+  isLast: boolean;
+  subTasks?: MissionSubTask[];
+}) {
   const Icon = ICONS[step.id];
   const isComplete = step.status === "complete";
   const isActive = step.status === "active";
+  const hasSubs = isActive && subTasks && subTasks.length > 0;
   return (
-    <div className="flex flex-col items-start md:items-center text-left md:text-center gap-2 px-2 relative">
+    <li className="relative flex items-start gap-3">
+      {/* Vertical connector down to the next step */}
+      {!isLast && (
+        <span
+          aria-hidden
+          className={cn(
+            "absolute left-[19px] top-10 bottom-[-12px] w-[2px] transition-colors",
+            isComplete ? "bg-[var(--color-ink)]" : "bg-[var(--color-border)]",
+          )}
+        />
+      )}
+
+      {/* Step bubble */}
       <div
         className={cn(
           "relative w-10 h-10 rounded-full border-2 grid place-items-center shrink-0 transition-colors",
@@ -103,10 +132,11 @@ function StepNode({ step }: { step: MissionStep }) {
           {step.index}
         </span>
       </div>
-      <div className="space-y-0.5 md:max-w-[160px]">
+
+      <div className="min-w-0 flex-1 pt-0.5">
         <div
           className={cn(
-            "text-[12px] font-semibold tracking-tight transition-colors",
+            "text-[13px] font-semibold tracking-tight transition-colors",
             isComplete || isActive
               ? "text-[var(--color-text)]"
               : "text-[var(--color-text-subtle)]",
@@ -114,10 +144,52 @@ function StepNode({ step }: { step: MissionStep }) {
         >
           {step.label}
         </div>
-        <div className="text-[10.5px] text-[var(--color-text-muted)] leading-snug">
+        <div className="text-[11px] text-[var(--color-text-muted)] leading-snug mt-0.5">
           {step.helper}
         </div>
+
+        {hasSubs && (
+          <ul className="mt-2 space-y-1">
+            {subTasks!.map((t, ti) => (
+              <SubTaskRow key={ti} task={t} />
+            ))}
+          </ul>
+        )}
       </div>
-    </div>
+    </li>
+  );
+}
+
+function SubTaskRow({ task }: { task: MissionSubTask }) {
+  return (
+    <li className="flex items-center gap-2 text-[11.5px] leading-snug">
+      <span className="w-4 inline-flex justify-center">
+        {task.status === "complete" ? (
+          <Check className="w-3.5 h-3.5 text-[var(--color-success)]" strokeWidth={2.5} />
+        ) : task.status === "running" ? (
+          <Loader2 className="w-3.5 h-3.5 text-[var(--color-ink)] animate-spin" />
+        ) : task.status === "failed" ? (
+          <span
+            aria-label="failed"
+            className="w-2 h-2 rounded-full bg-[var(--color-warning)]"
+          />
+        ) : (
+          <span
+            aria-hidden
+            className="w-2 h-2 rounded-full bg-[var(--color-border-strong)]"
+          />
+        )}
+      </span>
+      <span
+        className={cn(
+          task.status === "complete" && "text-[var(--color-text)]",
+          task.status === "running" && "text-[var(--color-text)] font-medium",
+          task.status === "failed" && "text-[var(--color-warning)]",
+          task.status === "pending" && "text-[var(--color-text-subtle)]",
+        )}
+      >
+        {task.label}
+      </span>
+    </li>
   );
 }
