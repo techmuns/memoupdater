@@ -1117,6 +1117,11 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       // Sections without a clear analog in the source memo are dropped.
       const coverage = state.memoCoverage;
       const exclude: CanonicalSectionId[] = [];
+      // ALWAYS exclude the "Updated Investment View" section. The analyst
+      // does not want an AI-generated investment recommendation in any
+      // part of the output — the memo presents facts; the human draws the
+      // conclusion. (This was sec_investment_action.)
+      exclude.push("sec_investment_action");
       if (coverage && !coverage.shareholding) exclude.push("sec_shareholding");
       // The supplementary panels carry the deepest valuation math — keep
       // valuation_detail always on (it's the most-asked-for content), but
