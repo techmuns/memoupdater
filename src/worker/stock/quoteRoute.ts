@@ -104,11 +104,15 @@ interface RawQuote {
   price: number;
   currency: string;
   source: string;
+  // CURRENT metrics only — forward valuations are intentionally omitted (the
+  // analyst doesn't want them in the output, and they're not deterministic).
   trailingEps?: number;
-  forwardEps?: number;
   trailingPE?: number;
-  forwardPE?: number;
   marketCap?: number;
+  enterpriseValue?: number;
+  trailingEvToEbitda?: number;
+  priceToBook?: number;
+  bookValue?: number;
   fiftyTwoWeekHigh?: number;
   fiftyTwoWeekLow?: number;
 }
@@ -117,13 +121,16 @@ function buildOk(q: RawQuote, ticker: string, asOf: string): StockQuoteResponse 
   const displaySym = q.currency === "INR" ? "Rs " : `${q.currency} `;
   const display = `${displaySym}${formatPrice(q.price)} (as of ${asOf}, ${q.source})`;
   // Compose a compact fundamentals summary the section prompt can use
-  // verbatim. Only mention fields the upstream actually returned.
+  // verbatim. CURRENT metrics only — no forward / forecast figures (the
+  // analyst's requirement: present only sourced facts, not projections).
   const bits: string[] = [];
-  if (q.trailingEps != null) bits.push(`trailing EPS ${displaySym}${formatPrice(q.trailingEps)}`);
-  if (q.forwardEps != null) bits.push(`forward EPS ${displaySym}${formatPrice(q.forwardEps)}`);
-  if (q.trailingPE != null) bits.push(`trailing P/E ${q.trailingPE.toFixed(1)}x`);
-  if (q.forwardPE != null) bits.push(`forward P/E ${q.forwardPE.toFixed(1)}x`);
   if (q.marketCap != null) bits.push(`mkt cap ${displaySym}${compactMoney(q.marketCap, q.currency)}`);
+  if (q.enterpriseValue != null) bits.push(`EV ${displaySym}${compactMoney(q.enterpriseValue, q.currency)}`);
+  if (q.trailingPE != null) bits.push(`trailing P/E ${q.trailingPE.toFixed(1)}x`);
+  if (q.trailingEvToEbitda != null) bits.push(`trailing EV/EBITDA ${q.trailingEvToEbitda.toFixed(1)}x`);
+  if (q.priceToBook != null) bits.push(`P/B ${q.priceToBook.toFixed(2)}x`);
+  if (q.bookValue != null) bits.push(`book value ${displaySym}${formatPrice(q.bookValue)}`);
+  if (q.trailingEps != null) bits.push(`trailing EPS ${displaySym}${formatPrice(q.trailingEps)}`);
   if (q.fiftyTwoWeekLow != null && q.fiftyTwoWeekHigh != null) {
     bits.push(`52w ${formatPrice(q.fiftyTwoWeekLow)}–${formatPrice(q.fiftyTwoWeekHigh)}`);
   }
@@ -139,10 +146,12 @@ function buildOk(q: RawQuote, ticker: string, asOf: string): StockQuoteResponse 
     source: q.source,
     display,
     trailingEps: q.trailingEps,
-    forwardEps: q.forwardEps,
     trailingPE: q.trailingPE,
-    forwardPE: q.forwardPE,
     marketCap: q.marketCap,
+    enterpriseValue: q.enterpriseValue,
+    trailingEvToEbitda: q.trailingEvToEbitda,
+    priceToBook: q.priceToBook,
+    bookValue: q.bookValue,
     fiftyTwoWeekHigh: q.fiftyTwoWeekHigh,
     fiftyTwoWeekLow: q.fiftyTwoWeekLow,
     fundamentalsDisplay,
@@ -247,14 +256,67 @@ interface YahooQuoteShape {
       regularMarketPrice?: number;
       currency?: string;
       trailingPE?: number;
-      forwardPE?: number;
       epsTrailingTwelveMonths?: number;
-      epsForward?: number;
       marketCap?: number;
+      priceToBook?: number;
+      bookValue?: number;
       fiftyTwoWeekHigh?: number;
       fiftyTwoWeekLow?: number;
     }>;
     error?: unknown;
+  };
+}
+
+// Yahoo v10 quoteSummary — returns enterpriseValue + EV/EBITDA which v7
+// doesn't carry. The endpoint sometimes 401s without a session cookie; the
+// caller treats null as "fall back gracefully" so an unverified EV/EBITDA
+// is simply left blank rather than fabricated.
+interface YahooQuoteSummaryShape {
+  quoteSummary?: {
+    result?: Array<{
+      defaultKeyStatistics?: {
+        enterpriseValue?: { raw?: number } | number | null;
+        enterpriseToEbitda?: { raw?: number } | number | null;
+      };
+      summaryDetail?: {
+        marketCap?: { raw?: number } | number | null;
+        priceToBook?: { raw?: number } | number | null;
+        trailingPE?: { raw?: number } | number | null;
+      };
+    }>;
+    error?: unknown;
+  };
+}
+
+function unwrapRaw(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (v && typeof v === "object" && "raw" in v) {
+    const r = (v as { raw?: unknown }).raw;
+    if (typeof r === "number" && Number.isFinite(r)) return r;
+  }
+  return undefined;
+}
+
+async function tryYahooQuoteSummary(
+  sym: string,
+  signal: AbortSignal,
+): Promise<Pick<RawQuote, "enterpriseValue" | "trailingEvToEbitda"> | null> {
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
+    sym,
+  )}?modules=defaultKeyStatistics,summaryDetail`;
+  const body = await safeFetchText(url, signal, "application/json");
+  if (!body) return null;
+  let json: YahooQuoteSummaryShape;
+  try {
+    json = JSON.parse(body) as YahooQuoteSummaryShape;
+  } catch {
+    return null;
+  }
+  const row = json.quoteSummary?.result?.[0]?.defaultKeyStatistics;
+  if (!row) return null;
+  return {
+    enterpriseValue: unwrapRaw(row.enterpriseValue),
+    trailingEvToEbitda: unwrapRaw(row.enterpriseToEbitda),
   };
 }
 
@@ -278,15 +340,20 @@ async function tryYahooQuoteJson(
     typeof row?.regularMarketPrice === "number" ? row.regularMarketPrice : null;
   const currency = typeof row?.currency === "string" ? row.currency : null;
   if (price == null || !currency) return null;
+  // Best-effort EV + EV/EBITDA from v10 quoteSummary (may 401 — that's OK,
+  // the cells will simply read 'not surfaced' instead of being fabricated).
+  const summary = await tryYahooQuoteSummary(sym, signal);
   return {
     price,
     currency,
     source: `Yahoo Finance · ${sym}`,
     trailingEps: numOrUndef(row?.epsTrailingTwelveMonths),
-    forwardEps: numOrUndef(row?.epsForward),
     trailingPE: numOrUndef(row?.trailingPE),
-    forwardPE: numOrUndef(row?.forwardPE),
     marketCap: numOrUndef(row?.marketCap),
+    enterpriseValue: summary?.enterpriseValue,
+    trailingEvToEbitda: summary?.trailingEvToEbitda,
+    priceToBook: numOrUndef(row?.priceToBook),
+    bookValue: numOrUndef(row?.bookValue),
     fiftyTwoWeekHigh: numOrUndef(row?.fiftyTwoWeekHigh),
     fiftyTwoWeekLow: numOrUndef(row?.fiftyTwoWeekLow),
   };

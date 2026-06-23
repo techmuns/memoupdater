@@ -420,13 +420,18 @@ export interface CurrentPriceInput {
   asOf: string;           // ISO date the quote was fetched
   source: string;         // human label, e.g. "Yahoo Finance · RATEGAIN.NS"
   display: string;        // pre-formatted, e.g. "Rs 871.45 (as of 2026-06-19, Yahoo Finance)"
-  // Optional fundamentals that the same upstream returned alongside the
-  // price. The section prompt uses these verbatim — never re-searched.
+  // Optional CURRENT fundamentals that the same upstream returned alongside
+  // the price. The section prompt uses these verbatim — never re-searched.
+  // Forward fields intentionally absent: the memo does NOT include forward
+  // valuations (analyst principle — only sourced current metrics vs the
+  // memo-date anchors).
   trailingEps?: number;
-  forwardEps?: number;
   trailingPE?: number;
-  forwardPE?: number;
   marketCap?: number;
+  enterpriseValue?: number;
+  trailingEvToEbitda?: number;
+  priceToBook?: number;
+  bookValue?: number;
   fiftyTwoWeekHigh?: number;
   fiftyTwoWeekLow?: number;
   fundamentalsDisplay?: string;
@@ -1211,19 +1216,24 @@ export type StockQuoteResponse =
       asOf: string;
       source: string;
       display: string;
-      // Optional fundamentals — present when the upstream source returns
-      // them (e.g. Yahoo v7 quote endpoint). Absent fields fall through to
-      // the model's existing search behaviour for that single number.
+      // Optional CURRENT fundamentals — present when the upstream source
+      // returns them. Absent fields lead the prompt to mark the cell as
+      // 'not surfaced'; the model NEVER fabricates a substitute.
+      // (Forward fields intentionally absent — the analyst's principle:
+      // only sourced current metrics compared to memo-date anchors.)
       trailingEps?: number;
-      forwardEps?: number;
       trailingPE?: number;
-      forwardPE?: number;
       marketCap?: number;
+      enterpriseValue?: number;
+      trailingEvToEbitda?: number;
+      priceToBook?: number;
+      bookValue?: number;
       fiftyTwoWeekHigh?: number;
       fiftyTwoWeekLow?: number;
-      // Pre-formatted summary line ("Rs 871 (as of 2026-06-19); trailing EPS
-      // Rs 5.92, trailing P/E 46.2x; 52w 417.6–902"). When present the
-      // section prompt uses this verbatim as a single fundamentals block.
+      // Pre-formatted summary line ("Rs 871 (as of 2026-06-19); mkt cap
+      // Rs 89.6 bn; EV Rs 92.1 bn; trailing P/E 46.2x; trailing EV/EBITDA
+      // 28.1x; P/B 5.2x; 52w 417.6–902"). When present the section prompt
+      // uses this verbatim as a single fundamentals block.
       fundamentalsDisplay?: string;
     }
   | {

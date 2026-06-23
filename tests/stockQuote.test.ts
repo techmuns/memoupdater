@@ -110,6 +110,86 @@ describe("stockQuote route", () => {
     }
   });
 
+  it("captures CURRENT trailing fundamentals from Yahoo v7 + v10 (no forward fields)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("query1.finance.yahoo.com/v7/finance/quote")) {
+          // v7 carries price, trailing P/E, trailing EPS, market cap, P/B,
+          // book value, 52w range. NOT enterprise value / EV-EBITDA — those
+          // live in v10 quoteSummary (next branch).
+          return new Response(
+            JSON.stringify({
+              quoteResponse: {
+                result: [
+                  {
+                    symbol: "RATEGAIN.NS",
+                    regularMarketPrice: 871.45,
+                    currency: "INR",
+                    trailingPE: 46.18,
+                    epsTrailingTwelveMonths: 18.87,
+                    marketCap: 89_600_000_000,
+                    priceToBook: 5.2,
+                    bookValue: 167.6,
+                    fiftyTwoWeekHigh: 902,
+                    fiftyTwoWeekLow: 417.6,
+                  },
+                ],
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/v10/finance/quoteSummary/")) {
+          return new Response(
+            JSON.stringify({
+              quoteSummary: {
+                result: [
+                  {
+                    defaultKeyStatistics: {
+                      enterpriseValue: { raw: 92_100_000_000 },
+                      enterpriseToEbitda: { raw: 28.1 },
+                    },
+                  },
+                ],
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("nope", { status: 404 });
+      }),
+    );
+    const res = await handleStockQuote(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      buildContext({ ticker: "RATEGAIN", country: "India" }) as any,
+    );
+    const body = await parsed(res);
+    expect(body.ok).toBe(true);
+    if (body.ok) {
+      expect(body.price).toBe(871.45);
+      expect(body.trailingPE).toBe(46.18);
+      expect(body.trailingEps).toBe(18.87);
+      expect(body.marketCap).toBe(89_600_000_000);
+      expect(body.enterpriseValue).toBe(92_100_000_000);
+      expect(body.trailingEvToEbitda).toBe(28.1);
+      expect(body.priceToBook).toBe(5.2);
+      expect(body.bookValue).toBe(167.6);
+      expect(body.fiftyTwoWeekHigh).toBe(902);
+      expect(body.fiftyTwoWeekLow).toBe(417.6);
+      // Forward fields are NOT in the response shape anymore (analyst rule).
+      expect("forwardEps" in body).toBe(false);
+      expect("forwardPE" in body).toBe(false);
+      // Fundamentals display string carries every captured trailing metric.
+      expect(body.fundamentalsDisplay).toContain("mkt cap");
+      expect(body.fundamentalsDisplay).toContain("trailing P/E 46.2x");
+      expect(body.fundamentalsDisplay).toContain("trailing EV/EBITDA 28.1x");
+      expect(body.fundamentalsDisplay).toContain("P/B 5.20x");
+      expect(body.fundamentalsDisplay).toContain("52w 417.60–902.00");
+      expect(body.fundamentalsDisplay).not.toMatch(/forward/i);
+    }
+  });
+
   it("returns not_found gracefully when every source fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("blocked", { status: 403 })));
     const res = await handleStockQuote(
