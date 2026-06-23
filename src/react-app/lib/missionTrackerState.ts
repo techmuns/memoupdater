@@ -3,6 +3,7 @@ import type {
   FollowUpMemo,
   LlmGenerationState,
   MemoDNA,
+  MemoUnderstandingState,
   ResearchFindings,
   ResearchGenerationState,
 } from "@shared/types";
@@ -39,6 +40,13 @@ export interface MissionTrackerStateSlice {
   initialFile: unknown | null;
   extractionStatus: ExtractionStatus;
   dna: MemoDNA | null;
+  // The LLM-driven Memo Understanding stage runs in the background after
+  // upload — it's what gates the Research button. The tracker MUST wait for
+  // it before showing "Extract insights" as complete; otherwise the rail
+  // says "done" while the Research button is still locked, which reads as
+  // "the dashboard is broken".
+  understanding: MemoUnderstandingState;
+  skipUnderstanding: boolean;
   research: ResearchFindings | null;
   researchState: ResearchGenerationState;
   generatedMemo: FollowUpMemo | null;
@@ -47,10 +55,10 @@ export interface MissionTrackerStateSlice {
 
 const LABELS: Record<MissionStepId, { label: string; helper: string }> = {
   upload:   { label: "Upload memo",         helper: "Drop the original memo to begin" },
-  detect:   { label: "Extract insights",    helper: "Flags, pillars, your priorities" },
-  research: { label: "Validate workflow",   helper: "Show every item being checked" },
-  generate: { label: "Draft <3-page memo",  helper: "Six client-priority sections" },
-  review:   { label: "Download / print",    helper: "Markdown or PDF, signed off" },
+  detect:   { label: "Extract insights",    helper: "Parse text and analyze the memo with AI" },
+  research: { label: "Run research",        helper: "Six focused web-search passes" },
+  generate: { label: "Draft <3-page memo",  helper: "Section-by-section, with sourced facts" },
+  review:   { label: "Download / print",    helper: "PDF, ready for the analyst" },
 };
 
 export function deriveMissionTrackerSteps(
@@ -59,6 +67,15 @@ export function deriveMissionTrackerSteps(
   const uploaded = state.initialFile !== null;
   const dnaReady = state.dna !== null;
   const extracting = state.extractionStatus === "extracting";
+
+  // The "Extract insights" step is HONESTLY complete only when both the
+  // local DNA build (fast, regex) AND the LLM Memo Understanding call
+  // (slow, what gates the Research button) have succeeded — OR when the
+  // user has explicitly hit the emergency-skip path.
+  const understandingKind = state.understanding.kind;
+  const insightsReady =
+    dnaReady &&
+    (understandingKind === "success" || state.skipUnderstanding);
 
   const researchKind = state.researchState.kind;
   const researchDone = researchKind === "success";
@@ -74,20 +91,22 @@ export function deriveMissionTrackerSteps(
     status: uploaded ? "complete" : "active",
   };
 
-  // Step 2 — Detect context
+  // Step 2 — Detect context (waits for the LLM understanding pass)
   let detectStatus: MissionStepStatus;
-  if (dnaReady) detectStatus = "complete";
-  else if (extracting || (uploaded && !dnaReady)) detectStatus = "active";
+  if (insightsReady) detectStatus = "complete";
+  else if (extracting || uploaded) detectStatus = "active";
   else detectStatus = "pending";
   const detect: MissionStep = {
     id: "detect", index: 2, ...LABELS.detect, status: detectStatus,
   };
 
-  // Step 3 — Research changes
+  // Step 3 — Research changes. Only "active" once Memo Understanding (the
+  // gate on the Research button) is past, so the rail never shows "ready
+  // to research" while the actual button is still locked.
   let researchStatus: MissionStepStatus;
   if (researchDone) researchStatus = "complete";
   else if (researchActive) researchStatus = "active";
-  else if (dnaReady) researchStatus = "active";
+  else if (insightsReady) researchStatus = "active";
   else researchStatus = "pending";
   const research: MissionStep = {
     id: "research", index: 3, ...LABELS.research, status: researchStatus,

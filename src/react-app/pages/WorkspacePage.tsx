@@ -148,6 +148,8 @@ export function WorkspacePage() {
         initialFile: state.initialFile,
         extractionStatus: state.extractionStatus,
         dna: state.dna,
+        understanding: state.understanding,
+        skipUnderstanding: state.skipUnderstanding,
         research: state.research,
         researchState: state.researchState,
         generatedMemo: state.generatedMemo,
@@ -157,6 +159,8 @@ export function WorkspacePage() {
       state.initialFile,
       state.extractionStatus,
       state.dna,
+      state.understanding,
+      state.skipUnderstanding,
       state.research,
       state.researchState,
       state.generatedMemo,
@@ -169,31 +173,78 @@ export function WorkspacePage() {
   // the tracker's pending/running/complete/failed enum so each step shows
   // exactly what's being done right now.
   const trackerSubTasks = useMemo<Partial<Record<MissionStepId, MissionSubTask[]>>>(
-    () => ({
-      research: state.researchProgress.passes.map<MissionSubTask>((p) => ({
-        label: p.title,
-        status:
-          p.status === "success"
-            ? "complete"
-            : p.status === "running"
-              ? "running"
-              : p.status === "failed"
-                ? "failed"
-                : "pending",
-      })),
-      generate: state.progress.sections.map<MissionSubTask>((s) => ({
-        label: s.title,
-        status:
-          s.status === "success"
-            ? "complete"
-            : s.status === "running"
-              ? "running"
-              : s.status === "failed"
-                ? "failed"
-                : "pending",
-      })),
-    }),
-    [state.researchProgress.passes, state.progress.sections],
+    () => {
+      // Extract step has two REAL sub-tasks: parse the uploaded PDF/text
+      // locally (fast, regex), then analyse the memo with the LLM (slow —
+      // this is what gates the Research button). Surfacing both prevents
+      // the "tick says done but Research button is locked" confusion.
+      const parseStatus: MissionSubTask["status"] =
+        state.dna !== null
+          ? "complete"
+          : state.extractionStatus === "extracting"
+            ? "running"
+            : state.extractionStatus === "error" ||
+                state.extractionStatus === "unsupported"
+              ? "failed"
+              : "pending";
+      let analyzeStatus: MissionSubTask["status"];
+      if (state.skipUnderstanding) {
+        analyzeStatus = "complete";
+      } else {
+        switch (state.understanding.kind) {
+          case "success":
+            analyzeStatus = "complete";
+            break;
+          case "loading":
+            analyzeStatus = "running";
+            break;
+          case "error":
+            analyzeStatus = "failed";
+            break;
+          default:
+            analyzeStatus = state.dna !== null ? "running" : "pending";
+        }
+      }
+      return {
+        detect: [
+          { label: "Parse uploaded memo (local)", status: parseStatus },
+          {
+            label: "Analyse memo with AI (background)",
+            status: analyzeStatus,
+          },
+        ],
+        research: state.researchProgress.passes.map<MissionSubTask>((p) => ({
+          label: p.title,
+          status:
+            p.status === "success"
+              ? "complete"
+              : p.status === "running"
+                ? "running"
+                : p.status === "failed"
+                  ? "failed"
+                  : "pending",
+        })),
+        generate: state.progress.sections.map<MissionSubTask>((s) => ({
+          label: s.title,
+          status:
+            s.status === "success"
+              ? "complete"
+              : s.status === "running"
+                ? "running"
+                : s.status === "failed"
+                  ? "failed"
+                  : "pending",
+        })),
+      };
+    },
+    [
+      state.dna,
+      state.extractionStatus,
+      state.understanding,
+      state.skipUnderstanding,
+      state.researchProgress.passes,
+      state.progress.sections,
+    ],
   );
 
   const showIntroHero = state.initialFile === null;
