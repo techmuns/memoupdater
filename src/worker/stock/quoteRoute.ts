@@ -63,17 +63,26 @@ export async function handleStockQuote(
   // payload, so the model never has to "verify" any of these via web_search.
   for (const sym of yahooSymbolsFor(ticker, exchangeHint, country)) {
     const got = await tryYahooQuoteJson(sym, signal);
-    if (got) return c.json(buildOk(got, ticker, today));
+    if (got) {
+      const enriched = await enrichWithScreener(got, ticker, exchangeHint, country, signal);
+      return c.json(buildOk(enriched, ticker, today));
+    }
   }
   // 2. Yahoo v8 chart — JSON fallback, price only.
   for (const sym of yahooSymbolsFor(ticker, exchangeHint, country)) {
     const got = await tryYahooChartJson(sym, signal);
-    if (got) return c.json(buildOk(got, ticker, today));
+    if (got) {
+      const enriched = await enrichWithScreener(got, ticker, exchangeHint, country, signal);
+      return c.json(buildOk(enriched, ticker, today));
+    }
   }
   // 3. Stooq CSV — broad coverage, no auth, price + recent close date.
   for (const sym of stooqSymbolsFor(ticker, exchangeHint, country)) {
     const got = await tryStooqCsv(sym, ticker, exchangeHint, country, signal);
-    if (got) return c.json(buildOk(got, ticker, today));
+    if (got) {
+      const enriched = await enrichWithScreener(got, ticker, exchangeHint, country, signal);
+      return c.json(buildOk(enriched, ticker, today));
+    }
   }
   // 4. Google Finance HTML — readable when reachable.
   for (const ex of googleExchangesFor(exchangeHint, country)) {
@@ -478,16 +487,133 @@ async function tryScreenerHtml(
   ticker: string,
   signal: AbortSignal,
 ): Promise<RawQuote | null> {
-  const url = `https://www.screener.in/company/${encodeURIComponent(ticker)}/consolidated/`;
-  const html = await safeFetchText(url, signal);
+  const html = await fetchScreenerHtml(ticker, signal);
   if (!html) return null;
-  const a = html.match(/₹\s*<span[^>]*>\s*([0-9][\d,]*\.?\d*)\s*<\/span>/);
-  const b = html.match(/₹\s*([0-9][\d,]*\.?\d*)/);
-  const m = a ?? b;
+  const fundamentals = parseScreenerFundamentals(html);
+  if (fundamentals.price == null) return null;
+  return {
+    price: fundamentals.price,
+    currency: "INR",
+    source: `Screener.in · ${ticker}`,
+    trailingEps: fundamentals.trailingEps,
+    trailingPE: fundamentals.trailingPE,
+    marketCap: fundamentals.marketCap,
+    priceToBook: fundamentals.priceToBook,
+    bookValue: fundamentals.bookValue,
+    fiftyTwoWeekHigh: fundamentals.fiftyTwoWeekHigh,
+    fiftyTwoWeekLow: fundamentals.fiftyTwoWeekLow,
+  };
+}
+
+// Enrichment pass: when a price came in from Yahoo / Stooq but missing
+// fundamentals (Yahoo's coverage of Indian tickers often returns only the
+// price), fall back to Screener.in for the missing fields. Best-effort —
+// returns the input unchanged if Screener isn't reachable or doesn't yield
+// anything new. INDIAN TICKERS ONLY (Screener doesn't cover US/UK names).
+async function enrichWithScreener(
+  base: RawQuote,
+  ticker: string,
+  exchange: string | undefined,
+  country: string | undefined,
+  signal: AbortSignal,
+): Promise<RawQuote> {
+  if (!looksIndian(exchange, country)) return base;
+  // Skip if Yahoo already gave us the full set.
+  const haveAll =
+    base.trailingPE != null &&
+    base.marketCap != null &&
+    base.priceToBook != null &&
+    base.trailingEps != null;
+  if (haveAll) return base;
+  const html = await fetchScreenerHtml(ticker, signal);
+  if (!html) return base;
+  const scr = parseScreenerFundamentals(html);
+  return {
+    ...base,
+    trailingPE: base.trailingPE ?? scr.trailingPE,
+    marketCap: base.marketCap ?? scr.marketCap,
+    priceToBook: base.priceToBook ?? scr.priceToBook,
+    bookValue: base.bookValue ?? scr.bookValue,
+    trailingEps: base.trailingEps ?? scr.trailingEps,
+    fiftyTwoWeekHigh: base.fiftyTwoWeekHigh ?? scr.fiftyTwoWeekHigh,
+    fiftyTwoWeekLow: base.fiftyTwoWeekLow ?? scr.fiftyTwoWeekLow,
+    source:
+      scr.trailingPE != null || scr.marketCap != null
+        ? `${base.source} + Screener.in`
+        : base.source,
+  };
+}
+
+async function fetchScreenerHtml(
+  ticker: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  // /consolidated/ pages exist for most NSE tickers; on 404 we fall back to
+  // the standalone page.
+  const primary = `https://www.screener.in/company/${encodeURIComponent(ticker)}/consolidated/`;
+  const fallback = `https://www.screener.in/company/${encodeURIComponent(ticker)}/`;
+  return (
+    (await safeFetchText(primary, signal)) ??
+    (await safeFetchText(fallback, signal))
+  );
+}
+
+interface ScreenerFundamentals {
+  price?: number;
+  marketCap?: number;          // INR cr (we normalise to absolute INR)
+  trailingPE?: number;
+  bookValue?: number;
+  priceToBook?: number;        // computed from price / bookValue when both present
+  trailingEps?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+}
+
+// Pulls the top-ratios block. Screener renders each ratio as
+//   <li class="flex flex-space-between">
+//     <span class="name">Stock P/E</span>
+//     <span class="nowrap value">...<span class="number">46.5</span></span>
+//   </li>
+// We grab the label → number using a label-keyed regex that tolerates the
+// extra Rs/% glyphs and the variant inner markup.
+function parseScreenerFundamentals(html: string): ScreenerFundamentals {
+  const out: ScreenerFundamentals = {};
+  const price = findRatio(html, "Current Price");
+  if (price != null) out.price = price;
+  const mcap = findRatio(html, "Market Cap"); // in Cr
+  if (mcap != null) out.marketCap = mcap * 1e7; // 1 cr = 10,000,000 INR
+  const pe = findRatio(html, "Stock P/E");
+  if (pe != null) out.trailingPE = pe;
+  const bv = findRatio(html, "Book Value");
+  if (bv != null) out.bookValue = bv;
+  const eps = findRatio(html, "EPS"); // sometimes labelled "EPS (TTM)"
+  if (eps != null) out.trailingEps = eps;
+  const high = findRatio(html, "High"); // 52w high in the same block
+  if (high != null) out.fiftyTwoWeekHigh = high;
+  const low = findRatio(html, "Low");
+  if (low != null) out.fiftyTwoWeekLow = low;
+  // Derive P/B when both price and book value are present and book is non-zero.
+  if (out.price != null && out.bookValue && out.bookValue > 0) {
+    out.priceToBook = Number((out.price / out.bookValue).toFixed(2));
+  }
+  return out;
+}
+
+// Find a Screener ratio by its visible label. Tolerates the wrapping markup
+// Screener uses (number is in a child <span class="number">), the optional
+// Rs / % / Cr / x glyphs, and either the consolidated or standalone page.
+function findRatio(html: string, label: string): number | null {
+  // <li ...><span class="name"> Stock P/E </span><span class="nowrap value">
+  //   <span class="number">46.5</span> </span></li>
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(
+    `<span[^>]*class="name"[^>]*>\\s*${escaped}\\s*<\\/span>[\\s\\S]{0,400}?<span[^>]*class="number"[^>]*>\\s*([0-9][\\d,]*\\.?\\d*)`,
+    "i",
+  );
+  const m = html.match(re);
   if (!m) return null;
-  const price = parseNum(m[1]);
-  if (price == null) return null;
-  return { price, currency: "INR", source: `Screener.in · ${ticker}` };
+  const n = parseFloat(m[1].replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
 }
 
 // --- Helpers ---------------------------------------------------------------

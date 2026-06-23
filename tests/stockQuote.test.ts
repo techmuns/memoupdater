@@ -110,6 +110,75 @@ describe("stockQuote route", () => {
     }
   });
 
+  it("enriches with Screener.in when Yahoo returned price-only (Indian ticker)", async () => {
+    // Simulates the live RateGain case: Yahoo v7 returns the price for the
+    // Indian symbol but trailingPE / marketCap / P/B come back undefined.
+    // The route should fall back to Screener.in's ratio block to fill in
+    // those cells, instead of leaving them 'not surfaced' for the prompt.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("query1.finance.yahoo.com/v7/finance/quote")) {
+          return new Response(
+            JSON.stringify({
+              quoteResponse: {
+                result: [
+                  {
+                    symbol: "RATEGAIN.NS",
+                    regularMarketPrice: 846.9,
+                    currency: "INR",
+                    // trailingPE / marketCap / priceToBook intentionally absent
+                  },
+                ],
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/v10/finance/quoteSummary/")) {
+          return new Response("nope", { status: 401 });
+        }
+        if (url.includes("screener.in/company/RATEGAIN")) {
+          // Trimmed Screener ratio block (same DOM shape as the live page).
+          return new Response(
+            `<ul id="top-ratios">
+              <li><span class="name">Market Cap</span><span class="nowrap value">Rs <span class="number">10,289</span> Cr.</span></li>
+              <li><span class="name">Current Price</span><span class="nowrap value">Rs <span class="number">846.90</span></span></li>
+              <li><span class="name">High</span><span class="nowrap value">Rs <span class="number">902</span></span></li>
+              <li><span class="name">Low</span><span class="nowrap value">Rs <span class="number">417.60</span></span></li>
+              <li><span class="name">Stock P/E</span><span class="nowrap value"><span class="number">46.5</span></span></li>
+              <li><span class="name">Book Value</span><span class="nowrap value">Rs <span class="number">170</span></span></li>
+              <li><span class="name">EPS</span><span class="nowrap value">Rs <span class="number">18.22</span></span></li>
+            </ul>`,
+            { status: 200 },
+          );
+        }
+        return new Response("nope", { status: 404 });
+      }),
+    );
+    const res = await handleStockQuote(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      buildContext({ ticker: "RATEGAIN", country: "India" }) as any,
+    );
+    const body = await parsed(res);
+    expect(body.ok).toBe(true);
+    if (body.ok) {
+      expect(body.price).toBe(846.9);
+      // These all come from Screener, not Yahoo:
+      expect(body.trailingPE).toBe(46.5);
+      expect(body.marketCap).toBe(10_289 * 1e7); // Rs 10,289 Cr → absolute INR
+      expect(body.bookValue).toBe(170);
+      expect(body.trailingEps).toBe(18.22);
+      expect(body.fiftyTwoWeekHigh).toBe(902);
+      expect(body.fiftyTwoWeekLow).toBe(417.6);
+      // P/B is derived from price / bookValue.
+      expect(body.priceToBook).toBeCloseTo(4.98, 2);
+      // Source label is annotated so the prompt can credit Screener too.
+      expect(body.source).toContain("Yahoo");
+      expect(body.source).toContain("Screener");
+    }
+  });
+
   it("captures CURRENT trailing fundamentals from Yahoo v7 + v10 (no forward fields)", async () => {
     vi.stubGlobal(
       "fetch",
