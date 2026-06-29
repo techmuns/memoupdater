@@ -445,6 +445,8 @@ export function WorkspacePage() {
                       />
                     ) : (
                       <Button
+                        size="lg"
+                        className="self-start"
                         onClick={() => void runResearch()}
                         disabled={
                           researchLoading ||
@@ -553,6 +555,8 @@ export function WorkspacePage() {
                 {canCall ? (
                   <div className="flex flex-col gap-3">
                     <Button
+                      size="lg"
+                      className="self-start"
                       onClick={() => void generateMemo(true)}
                       disabled={memoLoading || !researchSuccess}
                       leadingIcon={

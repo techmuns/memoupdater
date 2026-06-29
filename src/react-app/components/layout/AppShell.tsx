@@ -22,7 +22,7 @@ export function AppShell({ children }: AppShellProps) {
       }}
     >
       <CommandBar />
-      <main style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
+      <main style={{ flex: 1, overflow: "auto", padding: "28px 40px" }}>
         <div className="max-w-[1320px] mx-auto">{children}</div>
       </main>
     </div>

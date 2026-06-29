@@ -175,9 +175,9 @@ function RailStep({
             {step.helper}
           </span>
           {isActive && progress && progress.total > 0 && (
-            <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-text-muted)]">
+            <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-ink-soft)] border border-[color-mix(in_srgb,var(--color-ink)_15%,white)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-ink)]">
               {progress.done < progress.total && (
-                <Loader2 className="w-3 h-3 animate-spin text-[var(--color-ink)]" />
+                <Loader2 className="w-3 h-3 animate-spin" />
               )}
               <span className="tnum">
                 {progress.done} / {progress.total}

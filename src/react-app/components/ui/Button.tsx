@@ -16,7 +16,7 @@ const base =
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-[var(--color-ink)] text-[var(--color-ink-foreground)] hover:bg-[var(--color-ink-hover)] shadow-[var(--shadow-sm)]",
+    "bg-gradient-to-b from-[var(--color-ink)] to-[var(--color-ink-hover)] text-[var(--color-ink-foreground)] hover:from-[var(--color-ink-hover)] hover:to-[var(--color-ink-hover)] shadow-[var(--shadow-sm)]",
   secondary:
     "bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border-strong)] hover:bg-[var(--color-surface-muted)] shadow-[var(--shadow-sm)]",
   outline:
