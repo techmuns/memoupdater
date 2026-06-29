@@ -13,6 +13,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import type {
+  MemoUnderstandingState,
   ResearchPassId,
   ResearchPassRunState,
   SectionRunState,
@@ -26,7 +27,8 @@ import { ExtractionNotice } from "../components/ui/ExtractionNotice";
 import { CompanySearch } from "../components/CompanySearch";
 import { ResearchFindingsCard } from "../components/ResearchFindingsCard";
 import { MemoReview } from "../components/MemoReview";
-import { MemoMissionTracker } from "../components/MemoMissionTracker";
+import { WorkflowRail } from "../components/layout/WorkflowRail";
+import type { RailProgress } from "../components/layout/WorkflowRail";
 import { MemoCompletionBanner } from "../components/MemoCompletionBanner";
 import { UserPrioritiesPanel } from "../components/UserPrioritiesPanel";
 import { deriveMissionTrackerSteps } from "../lib/missionTrackerState";
@@ -35,9 +37,6 @@ import {
   selectTasksForPass,
 } from "../lib/memoUnderstandingSummary";
 import { useMemoProject } from "../state/MemoProjectContext";
-import type {
-  MissionSubTask,
-} from "../components/MemoMissionTracker";
 import type { MissionStepId } from "../lib/missionTrackerState";
 
 // Phase 6D: anchors that match these bare category names alone are too
@@ -74,6 +73,7 @@ export function WorkspacePage() {
     retryFullMemo,
     startOver,
     setUserResearchPriorities,
+    rerunMemoUnderstanding,
   } = useMemoProject();
 
   const status = state.llmProviderStatus;
@@ -233,84 +233,55 @@ export function WorkspacePage() {
     ],
   );
 
-  // Live sub-task lists for the workflow tracker — the "tick · tick · tick"
-  // analyst-facing progress. We map each per-pass / per-section status onto
-  // the tracker's pending/running/complete/failed enum so each step shows
-  // exactly what's being done right now.
-  const trackerSubTasks = useMemo<Partial<Record<MissionStepId, MissionSubTask[]>>>(
+  // Compact live counts for the rail's active step ("2 / 6 passes",
+  // "4 / 9 sections"). The rail conveys momentum at a glance; the detailed
+  // per-pass / per-section list lives in the main pane for the active step,
+  // so the two no longer duplicate each other.
+  const progressByStep = useMemo<Partial<Record<MissionStepId, RailProgress>>>(
     () => {
-      // Extract step has two REAL sub-tasks: parse the uploaded PDF/text
-      // locally (fast, regex), then analyse the memo with the LLM (slow —
-      // this is what gates the Research button). Surfacing both prevents
-      // the "tick says done but Research button is locked" confusion.
-      const parseStatus: MissionSubTask["status"] =
-        state.dna !== null
-          ? "complete"
-          : state.extractionStatus === "extracting"
-            ? "running"
-            : state.extractionStatus === "error" ||
-                state.extractionStatus === "unsupported"
-              ? "failed"
-              : "pending";
-      let analyzeStatus: MissionSubTask["status"];
-      if (state.skipUnderstanding) {
-        analyzeStatus = "complete";
-      } else {
-        switch (state.understanding.kind) {
-          case "success":
-            analyzeStatus = "complete";
-            break;
-          case "loading":
-            analyzeStatus = "running";
-            break;
-          case "error":
-            analyzeStatus = "failed";
-            break;
-          default:
-            analyzeStatus = state.dna !== null ? "running" : "pending";
-        }
+      const passes = state.researchProgress.passes;
+      const sections = state.progress.sections;
+      const out: Partial<Record<MissionStepId, RailProgress>> = {};
+      if (passes.some((p) => p.status !== "pending")) {
+        out.research = {
+          done: passes.filter((p) => p.status === "success").length,
+          total: passes.length,
+          noun: "passes",
+        };
       }
-      return {
-        detect: [
-          { label: "Parse uploaded memo (local)", status: parseStatus },
-          {
-            label: "Analyse memo with AI (background)",
-            status: analyzeStatus,
-          },
-        ],
-        research: state.researchProgress.passes.map<MissionSubTask>((p) => ({
-          label: p.title,
-          status:
-            p.status === "success"
-              ? "complete"
-              : p.status === "running"
-                ? "running"
-                : p.status === "failed"
-                  ? "failed"
-                  : "pending",
-        })),
-        generate: state.progress.sections.map<MissionSubTask>((s) => ({
-          label: s.title,
-          status:
-            s.status === "success"
-              ? "complete"
-              : s.status === "running"
-                ? "running"
-                : s.status === "failed"
-                  ? "failed"
-                  : "pending",
-        })),
-      };
+      if (sections.some((s) => s.status !== "pending")) {
+        out.generate = {
+          done: sections.filter((s) => s.status === "success").length,
+          total: sections.length,
+          noun: "sections",
+        };
+      }
+      return out;
     },
-    [
-      state.dna,
-      state.extractionStatus,
-      state.understanding,
-      state.skipUnderstanding,
-      state.researchProgress.passes,
-      state.progress.sections,
-    ],
+    [state.researchProgress.passes, state.progress.sections],
   );
+
+  // The two-pane main area renders ONLY the active step. "Active" is the first
+  // step the workflow says is in progress; once everything is complete the
+  // user lands on Review.
+  const activeStepId: MissionStepId = useMemo(() => {
+    const active = missionSteps.find((s) => s.status === "active");
+    if (active) return active.id;
+    if (memoSuccess) return "review";
+    return missionSteps[0].id;
+  }, [missionSteps, memoSuccess]);
+
+  // The rail lets the user revisit a completed/active step. `viewStep` is that
+  // manual override; it auto-clears whenever the live active step advances, so
+  // the main pane follows the workflow forward unless the user deliberately
+  // looks back.
+  const [viewStep, setViewStep] = useState<MissionStepId | null>(null);
+  const [prevActiveStep, setPrevActiveStep] = useState(activeStepId);
+  if (activeStepId !== prevActiveStep) {
+    setPrevActiveStep(activeStepId);
+    setViewStep(null);
+  }
+  const effectiveStep = viewStep ?? activeStepId;
 
   const showIntroHero = state.initialFile === null;
 
@@ -322,326 +293,336 @@ export function WorkspacePage() {
           produces against a newer backend. */}
       {state.staleClient && <StaleClientBanner />}
 
-      {/* Pre-upload intro — disappears once a file is loaded so the rest
-          of the workflow rises above the fold. */}
-      {showIntroHero && (
-        <Hero
-          eyebrow="Memo workbench"
-          title="Turn an old investment memo into a current follow-up note."
-        />
-      )}
-
-      {/* Layout (per analyst request):
-            1. Company picker
-            2. Upload
-            3. Workflow progress — moved HERE (was at the top); now shows
-               live tick-by-tick sub-tasks for research / generate
-            4. Research panel  →  Generate panel  →  Review
-          The old "Workbench readiness" strip and "Memo Intelligence"
-          card are no longer rendered — the analyst doesn't need a
-          summary of their own memo, and the readiness diagnostics added
-          no decision value. (Memo Understanding still runs in the
-          background; only the UI block was removed.) */}
-
-      {/* Step 1 — Company picker. Gates the upload so the project identity is
-          chosen explicitly instead of being heuristically (and sometimes
-          wrongly) detected from the memo body. */}
-      <CompanySearch />
-
-      {/* Step 2 — Upload (locked until a company is selected) */}
-      <UploadSlot
-        title="Upload the original investment memo"
-        description="Supports .txt, .md, and .pdf. We extract the text locally to build memo DNA and detect the latest period covered."
-        acceptedTypes=".txt,.md,.pdf"
-        variant="primary"
-        icon={UploadCloud}
-        currentFile={state.initialFile}
-        onFileSelected={onFile}
-        disabled={state.selectedCompany === null}
-        disabledHint="Use the company search above to choose the subject company, then the memo upload unlocks."
-      />
-      {/* The "Step 2: Detected memo period" panel and the "Extraction runs
-          locally" disclosure used to render here. Both removed: the panel
-          duplicates info already in Memo Intelligence + the company picker;
-          the disclosure adds no decision value. The orchestrators continue
-          to use auto-detected period values via the `??` fallback. */}
-      {/* The full extracted text feeds DNA / period detection / the LLM; we no
-          longer print the raw text layer (redundant with Memo Intelligence +
-          the "Memo loaded" tile). This only surfaces extraction problems. */}
-      <ExtractionNotice
-        status={state.extractionStatus}
-        result={state.extraction}
-      />
-
-      {/* Step 3 — Workflow progress (moved down from the top). Replaces the
-          old Memo Intelligence card in this slot. Renders only once the
-          memo is loaded so the rail isn't sitting empty above the upload.
-          The Research and Generate steps expand into live sub-task ticks
-          (one per research pass / per memo section). Memo Understanding
-          still runs in the background to feed downstream prompts — it
-          just isn't surfaced as a separate UI panel any more. */}
-      {state.initialFile && (
-        <MemoMissionTracker
+      {/* Two-pane workbench. Left = persistent workflow rail (the single
+          progress source + step navigation). Right = ONLY the active step's
+          content, so the next action is always the focus of the pane and can
+          never fall below the fold. The rail collapses above the pane on
+          narrow screens. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-6 items-start">
+        <WorkflowRail
           steps={missionSteps}
-          subTasks={trackerSubTasks}
-        />
-      )}
-
-      {/* Phase 6C: User-supplied priorities. Mounts as soon as DNA is
-          ready (regardless of memo-understanding state) so the user can
-          start typing while understanding is being computed. */}
-      {dnaReady && (
-        <UserPrioritiesPanel
-          value={state.userResearchPriorities}
-          onChange={setUserResearchPriorities}
-          researchHasRun={Boolean(state.research)}
-          disabled={researchLoading || memoLoading}
-        />
-      )}
-
-      {/* Step 3 — Research */}
-      {dnaReady && (
-        <Panel
-          eyebrow="Step 3"
-          title="Research latest developments"
-          actions={
-            state.researchProgress.kind === "complete_with_warnings" ? (
-              <Badge tone="warning" dot>
-                Research complete with warnings
-              </Badge>
-            ) : researchSuccess ? (
-              <Badge tone="success" dot>
-                Research complete
-              </Badge>
-            ) : researchError ? (
-              <Badge tone="warning" dot>
-                Research failed
-              </Badge>
-            ) : null
+          effectiveStepId={effectiveStep}
+          onSelectStep={(id) =>
+            setViewStep(id === activeStepId ? null : id)
           }
-        >
+          progressByStep={progressByStep}
+          onStartOver={
+            state.initialFile || state.dna || state.research || memoSuccess
+              ? startOver
+              : undefined
+          }
+        />
 
-          {gateBlocking ? (
-            <SetupRequiredPanel
-              title="Internal access token required"
-              message="The app-level gate is enabled. Open Settings → Advanced to enter the internal access token, or ask your operator to disable the gate after configuring Cloudflare Access / WAF / rate limiting."
-            />
-          ) : !canCall ? (
-            <SetupRequiredPanel
-              title="LLM not configured"
-              message={
-                status
-                  ? "Configure LLM_API_KEY (or OPENAI_API_KEY) and provider settings in the deployed Worker, then refresh."
-                  : "Could not read /api/llm/status. Refresh the page or check Settings."
-              }
-            />
-          ) : !researchAvailable ? (
-            <SetupRequiredPanel
-              title="Research requires the OpenAI provider"
-              message="Set LLM_PROVIDER=openai and a valid OpenAI key to enable web research."
-            />
-          ) : (
-            <div className="mt-4 flex flex-col gap-3">
-              {/* Phase 6A: gate the Research button on memo understanding.
-                  Memo-specific research is the requirement; generic research
-                  is hidden behind the developer escape hatch in
-                  MemoUnderstandingCard. */}
-              {state.understanding.kind !== "success" && !state.skipUnderstanding && (
-                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5 text-[11.5px] text-[var(--color-text-muted)] leading-snug">
-                  {state.understanding.kind === "loading"
-                    ? "Memo analysis in progress. Research will use the extracted memo understanding."
-                    : state.understanding.kind === "error"
-                      ? state.understanding.code === "timeout"
-                        ? "Memo analysis timed out. Rerun compact memo analysis above so research stays memo-specific."
-                        : state.understanding.code === "parse_error"
-                          ? "Memo analysis returned malformed JSON. Rerun compact memo analysis above so research stays memo-specific."
-                          : "Memo analysis failed. Rerun memo analysis above so research stays memo-specific."
-                      : "Memo analysis hasn't run yet."}
-                </div>
-              )}
-              {autoResearch === "counting" && !researchLoading ? (
-                <AutoResearchBanner
-                  countdown={autoCountdown}
-                  onStartNow={startResearchNow}
-                  onHold={holdResearch}
+        <div className="min-w-0 space-y-6">
+          {/* Step 1 — Upload (company picker + memo upload). Stays the pane
+              until the local text extraction has produced memo DNA, so any
+              extraction error remains visible here instead of being hidden
+              behind the analysis step. */}
+          {effectiveStep === "upload" && (
+            <>
+              {showIntroHero && (
+                <Hero
+                  eyebrow="Memo workbench"
+                  title="Turn an old investment memo into a current follow-up note."
                 />
-              ) : (
-                <Button
-                  onClick={() => void runResearch()}
-                  disabled={
-                    researchLoading ||
-                    (state.understanding.kind !== "success" && !state.skipUnderstanding)
-                  }
-                  leadingIcon={
-                    researchLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-4 h-4" />
-                    )
-                  }
-                  trailingIcon={!researchLoading ? <ArrowRight className="w-4 h-4" /> : undefined}
-                >
-                  {researchLoading
-                    ? "Researching…"
-                    : researchSuccess
-                      ? "Re-run research"
-                      : "Research latest developments"}
-                </Button>
               )}
-            </div>
+              <CompanySearch />
+              <UploadSlot
+                title="Upload the original investment memo"
+                description="Supports .txt, .md, and .pdf. We extract the text locally to build memo DNA and detect the latest period covered."
+                acceptedTypes=".txt,.md,.pdf"
+                variant="primary"
+                icon={UploadCloud}
+                currentFile={state.initialFile}
+                onFileSelected={onFile}
+                disabled={state.selectedCompany === null}
+                disabledHint="Use the company search above to choose the subject company, then the memo upload unlocks."
+              />
+              <ExtractionNotice
+                status={state.extractionStatus}
+                result={state.extraction}
+              />
+            </>
           )}
 
-          {(researchLoading ||
-            state.researchProgress.kind === "complete_with_warnings" ||
-            researchError) &&
-            state.researchProgress.passes.some(
-              (p) => p.status !== "pending",
-            ) && (
-              <ResearchProgressList
-                passes={state.researchProgress.passes}
-                tasksByPass={tasksByPass}
-                userPriorityLines={userPriorityLines}
+          {/* Step 2 — Extract insights. The AI analysis runs automatically;
+              this pane shows its live status and lets the user fill in
+              research priorities while it works. */}
+          {effectiveStep === "detect" && (
+            <>
+              <ExtractionNotice
+                status={state.extractionStatus}
+                result={state.extraction}
               />
-            )}
-
-          {state.researchProgress.kind === "complete_with_warnings" &&
-            !researchError && (
-              <ResearchWarningsBanner
-                passes={state.researchProgress.passes}
-                onRetryFailed={() => void retryFailedResearchPasses()}
-                disabled={researchLoading}
-              />
-            )}
-
-          {researchError && (
-            <ResearchFailureBanner
-              code={researchError.code}
-              message={researchError.message}
-              hasFailedPasses={
-                state.researchProgress.failedPassIds.length > 0 &&
-                state.researchProgress.failedPassIds.length <
-                  state.researchProgress.passes.length
-              }
-              onRetryFailed={() => void retryFailedResearchPasses()}
-              onRetryAll={() => void retryAllResearch()}
-              disabled={researchLoading}
-            />
-          )}
-        </Panel>
-      )}
-
-      {/* Pre-memo: research details live between Step 3 and Step 4. */}
-      {researchSuccess && !memoSuccess && (
-        <ResearchFindingsCard research={researchSuccess.research} />
-      )}
-
-      {/* Step 4 — Generate */}
-      {dnaReady && (
-        <Panel eyebrow="Step 4" title="Generate follow-up memo">
-          {canCall ? (
-            <div className="flex flex-col gap-3">
-              <Button
-                onClick={() => void generateMemo(true)}
-                disabled={memoLoading || !researchSuccess}
-                leadingIcon={
-                  memoLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-4 h-4" />
-                  )
+              <AnalysisPane
+                dnaReady={dnaReady}
+                extractionFailed={
+                  state.extractionStatus === "error" ||
+                  state.extractionStatus === "unsupported"
                 }
-                trailingIcon={
-                  !memoLoading ? <ArrowRight className="w-4 h-4" /> : undefined
+                understanding={state.understanding}
+                skip={state.skipUnderstanding}
+                onRerun={() => void rerunMemoUnderstanding()}
+              />
+              {dnaReady && (
+                <UserPrioritiesPanel
+                  value={state.userResearchPriorities}
+                  onChange={setUserResearchPriorities}
+                  researchHasRun={Boolean(state.research)}
+                  disabled={researchLoading || memoLoading}
+                />
+              )}
+            </>
+          )}
+
+          {/* Step 3 — Research. Priorities stay editable here (so "Hold — add
+              priorities" works) until research has succeeded. */}
+          {effectiveStep === "research" && (
+            <>
+              {dnaReady && !researchSuccess && (
+                <UserPrioritiesPanel
+                  value={state.userResearchPriorities}
+                  onChange={setUserResearchPriorities}
+                  researchHasRun={Boolean(state.research)}
+                  disabled={researchLoading || memoLoading}
+                />
+              )}
+              <Panel
+                eyebrow="Step 3"
+                title="Research latest developments"
+                actions={
+                  state.researchProgress.kind === "complete_with_warnings" ? (
+                    <Badge tone="warning" dot>
+                      Research complete with warnings
+                    </Badge>
+                  ) : researchSuccess ? (
+                    <Badge tone="success" dot>
+                      Research complete
+                    </Badge>
+                  ) : researchError ? (
+                    <Badge tone="warning" dot>
+                      Research failed
+                    </Badge>
+                  ) : null
                 }
               >
-                {memoLoading
-                  ? "Generating…"
-                  : memoSuccess
-                    ? "Re-generate memo"
-                    : "Generate follow-up memo"}
-              </Button>
-              {!researchSuccess && (
-                <p className="text-[11.5px] text-[var(--color-text-muted)] leading-relaxed">
-                  Run research first, or use "Generate without research" if
-                  automated research is unavailable. The without-research memo
-                  will explicitly state no external research was performed and
-                  flag forward-looking claims for manual verification.
-                </p>
+                {gateBlocking ? (
+                  <SetupRequiredPanel
+                    title="Internal access token required"
+                    message="The app-level gate is enabled. Open Settings → Advanced to enter the internal access token, or ask your operator to disable the gate after configuring Cloudflare Access / WAF / rate limiting."
+                  />
+                ) : !canCall ? (
+                  <SetupRequiredPanel
+                    title="LLM not configured"
+                    message={
+                      status
+                        ? "Configure LLM_API_KEY (or OPENAI_API_KEY) and provider settings in the deployed Worker, then refresh."
+                        : "Could not read /api/llm/status. Refresh the page or check Settings."
+                    }
+                  />
+                ) : !researchAvailable ? (
+                  <SetupRequiredPanel
+                    title="Research requires the OpenAI provider"
+                    message="Set LLM_PROVIDER=openai and a valid OpenAI key to enable web research."
+                  />
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {state.understanding.kind !== "success" &&
+                      !state.skipUnderstanding && (
+                        <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5 text-[11.5px] text-[var(--color-text-muted)] leading-snug">
+                          {state.understanding.kind === "loading"
+                            ? "Memo analysis in progress. Research will use the extracted memo understanding."
+                            : state.understanding.kind === "error"
+                              ? "Memo analysis didn't finish — open the Extract insights step in the workflow to retry, so research stays memo-specific."
+                              : "Memo analysis hasn't run yet."}
+                        </div>
+                      )}
+                    {autoResearch === "counting" && !researchLoading ? (
+                      <AutoResearchBanner
+                        countdown={autoCountdown}
+                        onStartNow={startResearchNow}
+                        onHold={holdResearch}
+                      />
+                    ) : (
+                      <Button
+                        onClick={() => void runResearch()}
+                        disabled={
+                          researchLoading ||
+                          (state.understanding.kind !== "success" &&
+                            !state.skipUnderstanding)
+                        }
+                        leadingIcon={
+                          researchLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-4 h-4" />
+                          )
+                        }
+                        trailingIcon={
+                          !researchLoading ? (
+                            <ArrowRight className="w-4 h-4" />
+                          ) : undefined
+                        }
+                      >
+                        {researchLoading
+                          ? "Researching…"
+                          : researchSuccess
+                            ? "Re-run research"
+                            : "Research latest developments"}
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {(researchLoading ||
+                  state.researchProgress.kind === "complete_with_warnings" ||
+                  researchError) &&
+                  state.researchProgress.passes.some(
+                    (p) => p.status !== "pending",
+                  ) && (
+                    <ResearchProgressList
+                      passes={state.researchProgress.passes}
+                      tasksByPass={tasksByPass}
+                      userPriorityLines={userPriorityLines}
+                    />
+                  )}
+
+                {state.researchProgress.kind === "complete_with_warnings" &&
+                  !researchError && (
+                    <ResearchWarningsBanner
+                      passes={state.researchProgress.passes}
+                      onRetryFailed={() => void retryFailedResearchPasses()}
+                      disabled={researchLoading}
+                    />
+                  )}
+
+                {researchError && (
+                  <ResearchFailureBanner
+                    code={researchError.code}
+                    message={researchError.message}
+                    hasFailedPasses={
+                      state.researchProgress.failedPassIds.length > 0 &&
+                      state.researchProgress.failedPassIds.length <
+                        state.researchProgress.passes.length
+                    }
+                    onRetryFailed={() => void retryFailedResearchPasses()}
+                    onRetryAll={() => void retryAllResearch()}
+                    disabled={researchLoading}
+                  />
+                )}
+
+                {/* Escape hatch: reachable even when research is unavailable
+                    or failed, so the user is never stranded on this step. */}
+                {canCall &&
+                  !researchSuccess &&
+                  !researchLoading &&
+                  autoResearch !== "counting" && (
+                    <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
+                      <p className="text-[11.5px] text-[var(--color-text-muted)] leading-relaxed mb-2">
+                        No external research? Skip straight to the draft. The
+                        without-research memo states that no research was
+                        performed and flags every forward-looking claim for
+                        manual verification.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void generateMemo(false)}
+                        disabled={memoLoading}
+                      >
+                        Generate without research (explicit)
+                      </Button>
+                    </div>
+                  )}
+              </Panel>
+
+              {researchSuccess && !memoSuccess && (
+                <ResearchFindingsCard research={researchSuccess.research} />
               )}
-              {!researchSuccess && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void generateMemo(false)}
-                  disabled={memoLoading}
-                >
-                  Generate without research (explicit)
-                </Button>
+            </>
+          )}
+
+          {/* Step 4 — Generate. Findings sit above the action so the user can
+              review what research found before drafting. */}
+          {effectiveStep === "generate" && (
+            <>
+              {researchSuccess && (
+                <ResearchFindingsCard research={researchSuccess.research} />
               )}
-            </div>
-          ) : (
-            <p className="text-[12.5px] text-[var(--color-text-muted)]">
-              Configure the LLM and (if needed) unlock the gate in Settings to
-              enable generation.
-            </p>
+              <Panel eyebrow="Step 4" title="Generate follow-up memo">
+                {canCall ? (
+                  <div className="flex flex-col gap-3">
+                    <Button
+                      onClick={() => void generateMemo(true)}
+                      disabled={memoLoading || !researchSuccess}
+                      leadingIcon={
+                        memoLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-4 h-4" />
+                        )
+                      }
+                      trailingIcon={
+                        !memoLoading ? (
+                          <ArrowRight className="w-4 h-4" />
+                        ) : undefined
+                      }
+                    >
+                      {memoLoading
+                        ? "Generating…"
+                        : memoSuccess
+                          ? "Re-generate memo"
+                          : "Generate follow-up memo"}
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-[12.5px] text-[var(--color-text-muted)]">
+                    Configure the LLM and (if needed) unlock the gate in
+                    Settings to enable generation.
+                  </p>
+                )}
+
+                {(memoLoading || memoError) && (
+                  <SectionProgressList sections={state.progress.sections} />
+                )}
+
+                {memoError && state.progress.failedSectionId && (
+                  <SectionFailureBanner
+                    sectionId={state.progress.failedSectionId}
+                    sections={state.progress.sections}
+                    detail={memoError.error}
+                    onRetryFailed={() => void retryFailedSection()}
+                    onRetryFull={() => void retryFullMemo()}
+                    disabled={memoLoading}
+                  />
+                )}
+              </Panel>
+            </>
           )}
 
-          {(memoLoading || memoError) && (
-            <SectionProgressList sections={state.progress.sections} />
+          {/* Step 5 — Review. The memo is the deliverable; research details
+              move below it. */}
+          {effectiveStep === "review" && memoSuccess && (
+            <>
+              <MemoCompletionBanner
+                memo={memoSuccess.memo}
+                research={state.research}
+              />
+              <MemoReview
+                memo={memoSuccess.memo}
+                generationType="openai"
+                researchWindowLabel={researchWindowLabel}
+              />
+              {researchSuccess && (
+                <ResearchFindingsCard
+                  key="post-memo"
+                  research={researchSuccess.research}
+                />
+              )}
+            </>
           )}
-
-          {memoError && state.progress.failedSectionId && (
-            <SectionFailureBanner
-              sectionId={state.progress.failedSectionId}
-              sections={state.progress.sections}
-              detail={memoError.error}
-              onRetryFailed={() => void retryFailedSection()}
-              onRetryFull={() => void retryFullMemo()}
-              disabled={memoLoading}
-            />
-          )}
-        </Panel>
-      )}
-
-      {/* Step 5 — Review */}
-      {memoSuccess && (
-        <>
-          <MemoCompletionBanner
-            memo={memoSuccess.memo}
-            research={state.research}
-          />
-          <MemoReview
-            memo={memoSuccess.memo}
-            generationType="openai"
-            researchWindowLabel={researchWindowLabel}
-          />
-        </>
-      )}
-
-      {/* Post-memo: the memo is the primary output. The research card moves
-          below it and remounts (new key), which resets its expanded state to
-          collapsed. The compact counts row stays visible; full details and
-          warnings remain one click away. */}
-      {researchSuccess && memoSuccess && (
-        <ResearchFindingsCard
-          key="post-memo"
-          research={researchSuccess.research}
-        />
-      )}
-
-      {/* Start over */}
-      {(state.initialFile || state.dna || state.research || memoSuccess) && (
-        <div className="flex justify-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={startOver}
-            leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}
-          >
-            Start over
-          </Button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -730,6 +711,105 @@ function AutoResearchBanner({
         </div>
       </div>
     </div>
+  );
+}
+
+// Step 2 pane: live status of the (automatic) memo analysis. Covers the
+// local extraction phase, the AI analysis phase, success, the explicit-skip
+// path, and analysis errors (with a Retry). Research auto-advances the moment
+// this reaches success, so the pane is mostly a reassuring status read-out.
+function AnalysisPane({
+  dnaReady,
+  extractionFailed,
+  understanding,
+  skip,
+  onRerun,
+}: {
+  dnaReady: boolean;
+  extractionFailed: boolean;
+  understanding: MemoUnderstandingState;
+  skip: boolean;
+  onRerun: () => void;
+}) {
+  let tone: "loading" | "success" | "warning";
+  let title: string;
+  let detail: string;
+  let showRetry = false;
+
+  if (extractionFailed) {
+    tone = "warning";
+    title = "We couldn't read this file";
+    detail =
+      "Open the Upload step in the workflow and try a .txt, .md, or text-based .pdf.";
+  } else if (!dnaReady) {
+    tone = "loading";
+    title = "Reading your memo…";
+    detail = "Extracting the text locally to build memo DNA.";
+  } else if (skip) {
+    tone = "success";
+    title = "Analysis skipped";
+    detail = "Research will run without the AI memo analysis.";
+  } else if (understanding.kind === "success") {
+    tone = "success";
+    title = "Analysis complete";
+    detail =
+      "Research will use the extracted memo understanding — continuing automatically.";
+  } else if (understanding.kind === "loading") {
+    tone = "loading";
+    title = "Analyzing your memo with AI…";
+    detail =
+      "Pulling out the thesis, valuation anchors, and claims that research should verify. This runs on its own.";
+  } else if (understanding.kind === "error") {
+    tone = "warning";
+    title = "Memo analysis didn't finish";
+    detail =
+      understanding.code === "timeout"
+        ? "The analysis timed out. Retry so research stays memo-specific."
+        : understanding.code === "parse_error"
+          ? "The analysis returned malformed data. Retry so research stays memo-specific."
+          : "The analysis failed. Retry so research stays memo-specific.";
+    showRetry = true;
+  } else {
+    tone = "loading";
+    title = "Preparing analysis…";
+    detail = "Starting the AI memo analysis.";
+  }
+
+  return (
+    <Panel eyebrow="Step 2" title="Extract insights">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 shrink-0">
+          {tone === "loading" ? (
+            <Loader2 className="w-5 h-5 animate-spin text-[var(--color-ink)]" />
+          ) : tone === "success" ? (
+            <Check
+              className="w-5 h-5 text-[var(--color-success)]"
+              strokeWidth={2.5}
+            />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-[var(--color-warning)]" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13.5px] font-semibold text-[var(--color-text)]">
+            {title}
+          </div>
+          <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed">
+            {detail}
+          </p>
+          {showRetry && (
+            <Button
+              size="sm"
+              className="mt-2.5"
+              onClick={onRerun}
+              leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}
+            >
+              Retry analysis
+            </Button>
+          )}
+        </div>
+      </div>
+    </Panel>
   );
 }
 
