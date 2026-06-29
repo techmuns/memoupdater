@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertCircle,
@@ -7,6 +7,7 @@ import {
   Circle,
   Loader2,
   Lock,
+  PauseCircle,
   RefreshCw,
   Sparkles,
   UploadCloud,
@@ -47,6 +48,19 @@ const GENERIC_ANCHOR_RE =
 function isGenericAnchor(anchor: string): boolean {
   return GENERIC_ANCHOR_RE.test(anchor.trim());
 }
+
+// Auto-advance (Step 1 of the workbench redesign). The single biggest UX
+// failure today is the buried "Run research" button: analysis finishes and
+// the app sits silently, so the user never realises they must scroll down and
+// click. We fix that by auto-starting research the moment analysis completes.
+//
+// It is NOT an instant jump: a short, visible grace window keeps the flow
+// hands-free (do nothing and it runs) while protecting the "Your priorities"
+// step (the user can still type priorities, then Hold or let it fire). Per the
+// chosen scope, auto-advance stops AFTER research — memo generation still
+// requires an explicit click.
+const AUTO_RESEARCH_DELAY_SECONDS = 5;
+type AutoResearchPhase = "idle" | "counting" | "held" | "fired";
 
 export function WorkspacePage() {
   const {
@@ -89,6 +103,57 @@ export function WorkspacePage() {
     }
     return undefined;
   }, [state.research]);
+
+  // --- Auto-advance: analysis complete → research ---------------------------
+  // "Ready" mirrors exactly when the manual Research button would be enabled:
+  // provider usable, memo analysis done (or explicitly skipped), and research
+  // has never run yet. Only on a clean first pass — retries and re-runs are
+  // always manual, so auto-advance can never loop or spend in the background.
+  const researchReady =
+    canCall &&
+    researchAvailable &&
+    (state.understanding.kind === "success" || state.skipUnderstanding) &&
+    state.researchState.kind === "idle";
+
+  const [autoResearch, setAutoResearch] = useState<AutoResearchPhase>("idle");
+  const [autoCountdown, setAutoCountdown] = useState(AUTO_RESEARCH_DELAY_SECONDS);
+
+  // State machine transitions are derived during render (React's endorsed
+  // "adjust state while rendering" pattern) instead of from effects, which
+  // keeps cascading renders out of effect bodies. A new upload changes the
+  // file id, which resets the grace window for the next memo; once research
+  // is ready and we're still idle, the countdown begins.
+  const fileKey = state.initialFile?.id ?? null;
+  const [autoFileKey, setAutoFileKey] = useState<string | null>(fileKey);
+  if (fileKey !== autoFileKey) {
+    setAutoFileKey(fileKey);
+    setAutoResearch("idle");
+    setAutoCountdown(AUTO_RESEARCH_DELAY_SECONDS);
+  } else if (researchReady && autoResearch === "idle") {
+    setAutoResearch("counting");
+  }
+
+  // Tick the countdown and fire research when it elapses. All state updates
+  // and the research kick-off happen inside the timer callback (never
+  // synchronously in the effect body), so a single clean pass fires once.
+  useEffect(() => {
+    if (autoResearch !== "counting") return;
+    const timer = setTimeout(() => {
+      if (autoCountdown <= 1) {
+        setAutoResearch("fired");
+        void runResearch();
+      } else {
+        setAutoCountdown((c) => c - 1);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [autoResearch, autoCountdown, runResearch]);
+
+  const startResearchNow = () => {
+    setAutoResearch("fired");
+    void runResearch();
+  };
+  const holdResearch = () => setAutoResearch("held");
 
   // Phase 6C/6D: per-pass memo-anchored task list. Used by the research
   // progress UI to show the SPECIFIC items being validated under each
@@ -394,27 +459,35 @@ export function WorkspacePage() {
                       : "Memo analysis hasn't run yet."}
                 </div>
               )}
-              <Button
-                onClick={() => void runResearch()}
-                disabled={
-                  researchLoading ||
-                  (state.understanding.kind !== "success" && !state.skipUnderstanding)
-                }
-                leadingIcon={
-                  researchLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-4 h-4" />
-                  )
-                }
-                trailingIcon={!researchLoading ? <ArrowRight className="w-4 h-4" /> : undefined}
-              >
-                {researchLoading
-                  ? "Researching…"
-                  : researchSuccess
-                    ? "Re-run research"
-                    : "Research latest developments"}
-              </Button>
+              {autoResearch === "counting" && !researchLoading ? (
+                <AutoResearchBanner
+                  countdown={autoCountdown}
+                  onStartNow={startResearchNow}
+                  onHold={holdResearch}
+                />
+              ) : (
+                <Button
+                  onClick={() => void runResearch()}
+                  disabled={
+                    researchLoading ||
+                    (state.understanding.kind !== "success" && !state.skipUnderstanding)
+                  }
+                  leadingIcon={
+                    researchLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-4 h-4" />
+                    )
+                  }
+                  trailingIcon={!researchLoading ? <ArrowRight className="w-4 h-4" /> : undefined}
+                >
+                  {researchLoading
+                    ? "Researching…"
+                    : researchSuccess
+                      ? "Re-run research"
+                      : "Research latest developments"}
+                </Button>
+              )}
             </div>
           )}
 
@@ -600,6 +673,62 @@ function StaleClientBanner() {
       >
         Reload now
       </Button>
+    </div>
+  );
+}
+
+// Auto-advance grace banner. Replaces the manual "Run research" button for a
+// few seconds after analysis completes: research starts on its own (hands-free)
+// unless the user holds it to add priorities or starts it immediately.
+function AutoResearchBanner({
+  countdown,
+  onStartNow,
+  onHold,
+}: {
+  countdown: number;
+  onStartNow: () => void;
+  onHold: () => void;
+}) {
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-ink)]/25 bg-[var(--color-ink-soft)] px-4 py-3.5">
+      <div className="flex items-start gap-3">
+        <span className="relative mt-0.5 shrink-0">
+          <Sparkles className="w-5 h-5 text-[var(--color-ink)]" />
+          <span
+            aria-hidden
+            className="absolute inset-[-5px] rounded-full ring-2 ring-[var(--color-ink)]/20 animate-pulse"
+          />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13.5px] font-semibold text-[var(--color-text)] leading-snug">
+            Analysis complete — research starts automatically in{" "}
+            <span className="tnum text-[var(--color-ink)]">{countdown}s</span>
+          </div>
+          <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed">
+            We'll scan six live sources for changes since the memo. Add anything
+            to <span className="font-medium text-[var(--color-text)]">Your priorities</span>{" "}
+            above first, or let it run.
+          </p>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={onStartNow}
+              leadingIcon={<Sparkles className="w-3.5 h-3.5" />}
+              trailingIcon={<ArrowRight className="w-3.5 h-3.5" />}
+            >
+              Start now
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onHold}
+              leadingIcon={<PauseCircle className="w-3.5 h-3.5" />}
+            >
+              Hold — add priorities
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
