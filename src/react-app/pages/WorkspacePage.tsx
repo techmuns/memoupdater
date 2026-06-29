@@ -259,6 +259,7 @@ export function WorkspacePage() {
                 <Hero
                   eyebrow="Memo workbench"
                   title="Turn an old investment memo into a current follow-up note."
+                  description="Pick the company, upload the original memo, and run focused web research — then draft a sourced, under-three-page update ready for the analyst."
                 />
               )}
               <CompanySearch />

@@ -39,20 +39,20 @@ export function Hero({
             "radial-gradient(circle at center, var(--color-ink) 0%, transparent 65%)",
         }}
       />
-      <div className="relative px-7 py-8 flex flex-col gap-5 sm:gap-6">
+      <div className="relative px-7 py-7 flex flex-col gap-4 sm:gap-5">
         {eyebrow && (
           <div className="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-ink)]">
-            <span className="w-2 h-2 rounded-full bg-[var(--color-ink)]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-ink)]" />
             {eyebrow}
           </div>
         )}
 
-        <div className="max-w-3xl">
-          <h1 className="text-[30px] sm:text-[34px] leading-[1.1] tracking-tight font-semibold text-[var(--color-text)]">
+        <div className="max-w-[46ch]">
+          <h1 className="text-[22px] sm:text-[26px] leading-[1.25] tracking-tight font-semibold text-[var(--color-text)]">
             {title}
           </h1>
           {description && (
-            <p className="text-[14px] sm:text-[15px] text-[var(--color-text-muted)] mt-3 leading-relaxed">
+            <p className="text-[13.5px] sm:text-[14px] text-[var(--color-text-muted)] mt-2.5 leading-relaxed">
               {description}
             </p>
           )}
