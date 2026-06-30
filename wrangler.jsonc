@@ -102,6 +102,16 @@
   //   { "binding": "MEMO_UPLOADS", "bucket_name": "memo-updater-uploads" }
   // ],
   //
+  // KV: cross-device saved-memo library (GET/PUT/DELETE /api/memos).
+  // ONE-TIME SETUP to turn on sync (until then the app falls back to
+  // per-browser local storage automatically):
+  //   1. wrangler kv namespace create MEMOS
+  //   2. Paste the returned id below and UNCOMMENT this block.
+  //   3. npm run deploy
+  // "kv_namespaces": [
+  //   { "binding": "MEMOS", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+  // ],
+  //
   // D1: persist projects, MemoDNA extractions, generation runs
   // "d1_databases": [
   //   {

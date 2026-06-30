@@ -1,11 +1,18 @@
 import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FileText, Plus, Trash2, ArrowRight } from "lucide-react";
+import {
+  ArrowRight,
+  Cloud,
+  FileText,
+  HardDrive,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Panel } from "../components/ui/Panel";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/EmptyState";
-import { useSavedMemos } from "../lib/useSavedMemos";
+import { useMemoSyncStatus, useSavedMemos } from "../lib/useSavedMemos";
 import { deleteSavedMemo, type SavedMemo } from "../lib/savedMemos";
 import { useMemoProject } from "../state/MemoProjectContext";
 
@@ -14,6 +21,7 @@ import { useMemoProject } from "../state/MemoProjectContext";
 // clears the current project and returns to the workbench.
 export function LibraryPage() {
   const memos = useSavedMemos();
+  const syncStatus = useMemoSyncStatus();
   const navigate = useNavigate();
   const { startOver } = useMemoProject();
 
@@ -28,13 +36,24 @@ export function LibraryPage() {
         eyebrow="Library"
         title="Saved memos"
         actions={
-          <Button
-            size="sm"
-            leadingIcon={<Plus className="w-3.5 h-3.5" />}
-            onClick={startNewMemo}
-          >
-            New memo
-          </Button>
+          <div className="flex items-center gap-2">
+            {syncStatus === "synced" ? (
+              <Badge tone="success" className="gap-1">
+                <Cloud className="w-3 h-3" /> Synced across devices
+              </Badge>
+            ) : (
+              <Badge tone="neutral" className="gap-1">
+                <HardDrive className="w-3 h-3" /> This device
+              </Badge>
+            )}
+            <Button
+              size="sm"
+              leadingIcon={<Plus className="w-3.5 h-3.5" />}
+              onClick={startNewMemo}
+            >
+              New memo
+            </Button>
+          </div>
         }
       >
         {memos.length === 0 ? (

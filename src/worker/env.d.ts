@@ -9,6 +9,13 @@ declare global {
     // used by POST /api/stock/search. Set with `wrangler secret put
     // MUNS_ACCESS_TOKEN`; never committed.
     MUNS_ACCESS_TOKEN?: string;
+    // KV namespace backing the cross-device saved-memo library
+    // (GET/PUT/DELETE /api/memos). Optional: when the binding is absent the
+    // memo endpoints report `synced:false` and the client falls back to
+    // local-only storage. Provision once with
+    // `wrangler kv namespace create MEMOS`, then add the binding to
+    // wrangler.jsonc (see the commented `kv_namespaces` block there).
+    MEMOS?: KVNamespace;
   }
 }
 export {};

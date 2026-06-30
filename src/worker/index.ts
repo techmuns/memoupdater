@@ -52,6 +52,11 @@ import { handleResearchPass } from "./research/passRoute";
 import { handleMemoUnderstand } from "./memoUnderstanding/route";
 import { handleStockSearch } from "./stock/searchRoute";
 import { handleStockQuote } from "./stock/quoteRoute";
+import {
+  handleMemoDelete,
+  handleMemoPut,
+  handleMemosList,
+} from "./memos/route";
 import { handlePrioritiesAnswer } from "./priorities/route";
 import { buildSectionPrompt } from "./llm/sectionPrompt";
 import { isCanonicalSectionId } from "@shared/sectionIds";
@@ -166,6 +171,11 @@ app.post("/api/research/pass", (c) => handleResearchPass(c));
 app.post("/api/memo/understand", (c) => handleMemoUnderstand(c));
 app.post("/api/stock/search", (c) => handleStockSearch(c));
 app.post("/api/stock/quote", (c) => handleStockQuote(c));
+
+// Cross-device saved-memo library (KV-backed; see src/worker/memos/route.ts).
+app.get("/api/memos", (c) => handleMemosList(c));
+app.put("/api/memos/:id", (c) => handleMemoPut(c));
+app.delete("/api/memos/:id", (c) => handleMemoDelete(c));
 
 app.post("/api/generate/follow-up-memo", async (c) => {
   const declaredLength = Number(c.req.header("content-length") ?? "0");

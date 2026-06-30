@@ -24,6 +24,19 @@ const STORAGE_KEY = "memo.library.v1";
 const MAX_ENTRIES = 50;
 const CHANGE_EVENT = "memo:library-changed";
 
+// Optional cross-device sink. lib/memoSync registers this to mirror local
+// writes up to the KV-backed server. Kept as an injected callback (rather than
+// importing memoSync here) so the local store has no dependency on the network
+// layer — no import cycle, and the store works standalone if sync is off.
+export interface RemoteSink {
+  onUpsert: (memo: SavedMemo) => void;
+  onDelete: (id: string) => void;
+}
+let remoteSink: RemoteSink | null = null;
+export function setRemoteSink(sink: RemoteSink | null): void {
+  remoteSink = sink;
+}
+
 // One saved entry per (memo project, company). Re-generating the same memo
 // updates that entry instead of piling up duplicates; a different file or
 // company is a distinct entry. Kept URL-safe so it can be a route param.
@@ -91,11 +104,20 @@ export function saveMemo(input: SaveMemoInput): SavedMemo {
     list.unshift(record);
   }
   write(list);
+  remoteSink?.onUpsert(record);
   return record;
 }
 
 export function deleteSavedMemo(id: string): void {
   write(read().filter((m) => m.id !== id));
+  remoteSink?.onDelete(id);
+}
+
+// Replace the entire local cache. Used by lib/memoSync after reconciling with
+// the server; goes straight through write() (no remote sink re-fire) so it
+// won't bounce the freshly-pulled set back to the server.
+export function replaceAllSavedMemos(list: SavedMemo[]): void {
+  write(list);
 }
 
 // Subscribe to library changes from this tab (custom event) and other tabs

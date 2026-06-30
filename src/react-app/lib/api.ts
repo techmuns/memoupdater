@@ -115,6 +115,41 @@ async function postJson<TResponse, TBody>(
   return res.json() as Promise<TResponse>;
 }
 
+// Generic JSON request for verbs other than GET/POST (PUT, DELETE). Body is
+// omitted entirely when undefined so DELETE requests don't send one.
+async function requestJson<T>(
+  method: "PUT" | "DELETE",
+  path: string,
+  body?: unknown,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    method,
+    headers: {
+      Accept: "application/json",
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const errBody = await readErrorBody(res);
+    throw new ApiError({
+      path,
+      status: res.status,
+      statusText: res.statusText,
+      serverError: errBody.error,
+      serverMessage: errBody.message,
+    });
+  }
+  return res.json() as Promise<T>;
+}
+
+function userHeader(userId: string): Record<string, string> {
+  return { "X-Munshot-User": userId };
+}
+
 // Attach the X-Memo-LLM-Gate header only when a non-empty token is set in
 // session storage (Settings → Advanced). When the gate is off, the worker
 // ignores the missing header; when the gate is on and the header is
@@ -228,5 +263,29 @@ export const api = {
       "/api/stock/quote",
       req,
       { signal },
+    ),
+
+  // Cross-device saved-memo library. The user identity travels in the
+  // X-Munshot-User header (the host iframe's user id). When the server's KV
+  // binding is absent these return { synced: false } and the client stays
+  // local-only. Memos are passed as opaque records to avoid a type cycle with
+  // lib/savedMemos; lib/memoSync casts them back to SavedMemo.
+  memosList: (userId: string) =>
+    getJson<{ synced: boolean; memos: unknown[] }>("/api/memos", {
+      headers: userHeader(userId),
+    }),
+  memoPut: (userId: string, id: string, memo: unknown) =>
+    requestJson<{ synced: boolean }>(
+      "PUT",
+      `/api/memos/${encodeURIComponent(id)}`,
+      memo,
+      { headers: userHeader(userId) },
+    ),
+  memoDelete: (userId: string, id: string) =>
+    requestJson<{ synced: boolean }>(
+      "DELETE",
+      `/api/memos/${encodeURIComponent(id)}`,
+      undefined,
+      { headers: userHeader(userId) },
     ),
 };
