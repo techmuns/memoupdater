@@ -1,7 +1,8 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { Plus, Settings as SettingsIcon } from "lucide-react";
+import { FolderClock, Plus, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { useMemoProject } from "../../state/MemoProjectContext";
+import { useSavedMemos } from "../../lib/useSavedMemos";
 import { deriveCommandBarValues } from "./commandBarState";
 
 // Munshot Zone 1: sticky 48px header. Left = product mark + title + active
@@ -9,7 +10,16 @@ import { deriveCommandBarValues } from "./commandBarState";
 // + New Memo + Settings. No charts/tables/large descriptions live here.
 export function CommandBar() {
   const navigate = useNavigate();
-  const { state } = useMemoProject();
+  const { state, startOver } = useMemoProject();
+  const savedMemos = useSavedMemos();
+
+  // "New Memo" clears the current project and returns to the workbench, so the
+  // analyst always starts from a clean slate. Completed memos are auto-saved
+  // to the library, so nothing is lost.
+  const startNewMemo = (): void => {
+    startOver();
+    navigate("/workspace");
+  };
   const { stageLabel, stageTone } = deriveCommandBarValues({
     selectedCompany: state.selectedCompany
       ? {
@@ -115,10 +125,29 @@ export function CommandBar() {
         <Button
           size="sm"
           leadingIcon={<Plus className="w-3.5 h-3.5" />}
-          onClick={() => navigate("/intake")}
+          onClick={startNewMemo}
         >
           New Memo
         </Button>
+        <NavLink
+          to="/library"
+          aria-label="Saved memos"
+          className={({ isActive }) =>
+            `inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] font-medium rounded-[var(--radius-md)] transition-colors ${
+              isActive
+                ? "bg-[var(--color-ink-soft)] text-[var(--color-ink)] font-semibold"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
+            }`
+          }
+        >
+          <FolderClock className="w-4 h-4" />
+          <span className="hidden sm:inline">Memos</span>
+          {savedMemos.length > 0 && (
+            <span className="tnum inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[var(--color-ink)] text-white text-[9px] font-bold">
+              {savedMemos.length}
+            </span>
+          )}
+        </NavLink>
         <NavLink
           to="/settings"
           aria-label="Settings"

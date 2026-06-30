@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertCircle,
@@ -19,7 +19,6 @@ import type {
 } from "@shared/types";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
-import { Hero } from "../components/ui/Hero";
 import { Panel } from "../components/ui/Panel";
 import { UploadSlot } from "../components/ui/UploadSlot";
 import { ExtractionNotice } from "../components/ui/ExtractionNotice";
@@ -36,6 +35,7 @@ import {
   selectTasksForPass,
 } from "../lib/memoUnderstandingSummary";
 import { useMemoProject } from "../state/MemoProjectContext";
+import { saveMemo } from "../lib/savedMemos";
 import type { MissionStepId } from "../lib/missionTrackerState";
 
 // Phase 6D: anchors that match these bare category names alone are too
@@ -218,7 +218,25 @@ export function WorkspacePage() {
   }
   const effectiveStep = viewStep ?? activeStepId;
 
-  const showIntroHero = state.initialFile === null;
+  // Auto-save every generated (non-demo) memo to the per-browser library so the
+  // analyst can reopen it later. The effect keys on the memo object, so it runs
+  // once per generation; saveMemo upserts by project+company, so re-generating
+  // the same memo updates its entry instead of creating duplicates.
+  const generatedMemo = memoSuccess?.memo ?? null;
+  useEffect(() => {
+    if (!generatedMemo || generatedMemo.isDemo) return;
+    saveMemo({
+      memo: generatedMemo,
+      company: state.selectedCompany
+        ? {
+            ticker: state.selectedCompany.ticker,
+            companyName: state.selectedCompany.companyName,
+          }
+        : null,
+      researchWindowLabel,
+      generationType: "openai",
+    });
+  }, [generatedMemo, state.selectedCompany, researchWindowLabel]);
 
   return (
     <div className="space-y-6">
@@ -255,13 +273,6 @@ export function WorkspacePage() {
               behind the analysis step. */}
           {effectiveStep === "upload" && (
             <>
-              {showIntroHero && (
-                <Hero
-                  eyebrow="Memo workbench"
-                  title="Turn an old investment memo into a current follow-up note."
-                  description="Pick the company, upload the original memo, and run focused web research — then draft a sourced, under-three-page update ready for the analyst."
-                />
-              )}
               <CompanySearch />
               <UploadSlot
                 title="Upload the original investment memo"
