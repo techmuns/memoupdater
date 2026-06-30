@@ -107,7 +107,7 @@
   // stay "MEMOS"; "id" is the Workers KV namespace id from the Cloudflare
   // dashboard. Takes effect on the next deploy.
   "kv_namespaces": [
-    { "binding": "MEMOS", "id": "fe377c45c1fa42cb803f04235c726823" }
+    { "binding": "MEMOS", "id": "76712a986d17432badc21a97a29f96a8" }
   ],
   //
   // D1: persist projects, MemoDNA extractions, generation runs
