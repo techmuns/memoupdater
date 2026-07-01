@@ -14,6 +14,8 @@ import type {
   MemoUnderstandResponse,
   ResearchPassRequest,
   ResearchPassResponse,
+  ReportAskRequest,
+  ReportAskResponse,
   ResearchReportSectionRequest,
   ResearchReportSectionResponse,
   ResearchUpdatesRequest,
@@ -244,6 +246,12 @@ export const api = {
         headers: gateHeader(),
       },
     ),
+  // Stage 3: ask a follow-up question, answered from the stored report.
+  reportAsk: (req: ReportAskRequest, signal?: AbortSignal) =>
+    postJson<ReportAskResponse, ReportAskRequest>("/api/report/ask", req, {
+      signal,
+      headers: gateHeader(),
+    }),
   memoUnderstand: (
     req: MemoUnderstandRequest,
     signal?: AbortSignal,

@@ -58,6 +58,7 @@ import {
   handleMemoPut,
   handleMemosList,
 } from "./memos/route";
+import { handleReportAsk } from "./report/askRoute";
 import { handlePrioritiesAnswer } from "./priorities/route";
 import { buildSectionPrompt } from "./llm/sectionPrompt";
 import { isCanonicalSectionId } from "@shared/sectionIds";
@@ -170,6 +171,7 @@ app.get("/api/llm/status", (c) => {
 app.post("/api/research/updates", (c) => handleResearchUpdates(c));
 app.post("/api/research/pass", (c) => handleResearchPass(c));
 app.post("/api/research/report-section", (c) => handleResearchReportSection(c));
+app.post("/api/report/ask", (c) => handleReportAsk(c));
 app.post("/api/memo/understand", (c) => handleMemoUnderstand(c));
 app.post("/api/stock/search", (c) => handleStockSearch(c));
 app.post("/api/stock/quote", (c) => handleStockQuote(c));

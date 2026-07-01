@@ -12,7 +12,9 @@ import type { Context } from "hono";
 
 const KEY_PREFIX = "memos:";
 const MAX_MEMOS = 50;
-const MAX_MEMO_BYTES = 256 * 1024; // a single memo document
+// A memo now carries its comprehensive research report (for cross-device Q&A),
+// so allow a larger per-memo document.
+const MAX_MEMO_BYTES = 1_500 * 1024;
 const MAX_USER_ID_LEN = 200;
 
 interface StoredMemo {

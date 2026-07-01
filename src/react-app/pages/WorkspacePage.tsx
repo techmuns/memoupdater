@@ -20,6 +20,7 @@ import { ExtractionNotice } from "../components/ui/ExtractionNotice";
 import { CompanySearch } from "../components/CompanySearch";
 import { ResearchFindingsCard } from "../components/ResearchFindingsCard";
 import { FullResearchReportSection } from "../components/FullResearchReportSection";
+import { ReportQnA } from "../components/ReportQnA";
 import { MemoReview } from "../components/MemoReview";
 import { WorkflowRail } from "../components/layout/WorkflowRail";
 import type { RailProgress } from "../components/layout/WorkflowRail";
@@ -163,8 +164,18 @@ export function WorkspacePage() {
         : null,
       researchWindowLabel,
       generationType: "openai",
+      // Persist the report so follow-up Q&A works later + cross-device.
+      report:
+        state.fullReport.kind === "success"
+          ? state.fullReport.report
+          : undefined,
     });
-  }, [generatedMemo, state.selectedCompany, researchWindowLabel]);
+  }, [
+    generatedMemo,
+    state.selectedCompany,
+    researchWindowLabel,
+    state.fullReport,
+  ]);
 
   return (
     <div className="space-y-6">
@@ -373,8 +384,16 @@ export function WorkspacePage() {
                 />
               )}
 
-              {/* The internal research report stays available after delivery
-                  (foundation for follow-up Q&A in Stage 3). */}
+              {/* Stage 3: ask follow-up questions, answered from the stored
+                  report — no re-running research. */}
+              {state.fullReport.kind === "success" && (
+                <ReportQnA
+                  report={state.fullReport.report}
+                  memoContext={state.extraction?.text?.trim() || undefined}
+                />
+              )}
+
+              {/* The internal research report stays available after delivery. */}
               <FullResearchReportSection />
             </>
           )}

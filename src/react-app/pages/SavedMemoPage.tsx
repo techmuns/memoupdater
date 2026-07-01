@@ -4,6 +4,8 @@ import { ArrowLeft, FileText } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { MemoReview } from "../components/MemoReview";
+import { FullResearchReportCard } from "../components/FullResearchReportCard";
+import { ReportQnA } from "../components/ReportQnA";
 import { getSavedMemo } from "../lib/savedMemos";
 
 // Read-only view of a single saved memo, reached from the library at
@@ -60,6 +62,15 @@ export function SavedMemoPage() {
         generationType={saved.generationType}
         researchWindowLabel={saved.researchWindowLabel}
       />
+
+      {/* Stage 3: the stored report powers follow-up Q&A + a full re-read,
+          reusable across devices without re-running research. */}
+      {saved.report && (
+        <>
+          <ReportQnA report={saved.report} />
+          <FullResearchReportCard report={saved.report} />
+        </>
+      )}
     </div>
   );
 }

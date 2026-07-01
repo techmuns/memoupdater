@@ -1382,3 +1382,29 @@ export type FullResearchReportState =
   | { kind: "loading" }
   | { kind: "success"; report: FullResearchReport }
   | { kind: "error"; code: ResearchErrorCode | "aborted"; message: string };
+
+// ---------------------------------------------------------------------------
+// Stage 3: ask-the-report Q&A. Follow-up questions answered from the STORED
+// comprehensive report (no new web research) — so the analyst can probe a
+// company without re-running research.
+// ---------------------------------------------------------------------------
+
+export interface ReportAskRequest {
+  question: string;
+  company: string;
+  // The stored report sections (title + markdown), clipped client-side.
+  report: { title: string; markdown: string }[];
+  memoContext?: string;
+}
+
+export type ReportAskResponse =
+  | {
+      ok: true;
+      answer: string;
+      providerMetadata?: ResearchReportProviderMetadata;
+    }
+  | {
+      ok: false;
+      code: LlmGenerationErrorCode;
+      message: string;
+    };

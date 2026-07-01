@@ -1,4 +1,4 @@
-import type { FollowUpMemo } from "@shared/types";
+import type { FollowUpMemo, FullResearchReport } from "@shared/types";
 
 // Client-side library of generated follow-up memos. Persisted in
 // localStorage (per browser) so the analyst can close the dashboard and come
@@ -18,6 +18,9 @@ export interface SavedMemo {
   researchWindowLabel?: string;
   generationType: "openai" | "demo";
   memo: FollowUpMemo;
+  // Stage 3: the comprehensive report persisted with the memo, so follow-up
+  // Q&A works later and across devices without re-running research.
+  report?: FullResearchReport;
 }
 
 const STORAGE_KEY = "memo.library.v1";
@@ -84,6 +87,7 @@ export interface SaveMemoInput {
   company: SavedMemoCompany | null;
   researchWindowLabel?: string;
   generationType: "openai" | "demo";
+  report?: FullResearchReport;
 }
 
 export function saveMemo(input: SaveMemoInput): SavedMemo {
@@ -97,6 +101,7 @@ export function saveMemo(input: SaveMemoInput): SavedMemo {
     researchWindowLabel: input.researchWindowLabel,
     generationType: input.generationType,
     memo: input.memo,
+    report: input.report,
   };
   if (existingIdx >= 0) {
     list[existingIdx] = record;
