@@ -167,7 +167,12 @@ type Action =
   | { type: "SET_LLM_STATE"; state: LlmGenerationState }
   | { type: "SET_PRIORITIES_ANSWER"; state: PrioritiesAnswerState }
   | { type: "SET_GENERATED_MEMO"; memo: FollowUpMemo | null }
-  | { type: "START_GENERATION"; startedAt: string; resumeFromIdx: number }
+  | {
+      type: "START_GENERATION";
+      startedAt: string;
+      resumeFromIdx: number;
+      excludeSectionIds?: ReadonlyArray<CanonicalSectionId>;
+    }
   | { type: "SECTION_STARTED"; sectionId: CanonicalSectionId; attempt: 1 | 2 }
   | { type: "SECTION_SUCCESS"; sectionId: CanonicalSectionId; section: MemoSection }
   | {
@@ -411,13 +416,17 @@ function reducer(state: State, action: Action): State {
       return { ...state, generatedMemo: action.memo };
     case "START_GENERATION": {
       const fresh = buildInitialProgress();
+      const excluded = new Set(action.excludeSectionIds ?? []);
       const sections = fresh.sections.map<SectionRunState>((row, i) => {
+        // Sections the orchestrator won't draft are flagged skipped so the UI
+        // hides them instead of showing a permanently-pending row.
+        const skipped = excluded.has(row.id);
         const prev =
           i < action.resumeFromIdx ? state.progress.sections[i] : undefined;
         if (prev && prev.status === "success") {
-          return { ...prev, attempt: 0, errorCode: undefined, errorMessage: undefined };
+          return { ...prev, attempt: 0, errorCode: undefined, errorMessage: undefined, skipped };
         }
-        return row;
+        return { ...row, skipped };
       });
       const completedCount = sections.filter((s) => s.status === "success").length;
       return {
@@ -1080,6 +1089,26 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       const existingSections =
         mode === "resume" ? state.completedSections : {};
 
+      // Coverage-driven skip list — the user's principle: the follow-up
+      // memo should only contain what the original memo actually covered.
+      // Sections without a clear analog in the source memo are dropped.
+      // Computed BEFORE START_GENERATION so the progress UI never seeds a
+      // permanently-pending row for a section we won't draft.
+      const coverage = state.memoCoverage;
+      const exclude: CanonicalSectionId[] = [];
+      // ALWAYS exclude the "Updated Investment View" section. The analyst
+      // does not want an AI-generated investment recommendation in any
+      // part of the output — the memo presents facts; the human draws the
+      // conclusion. (This was sec_investment_action.)
+      exclude.push("sec_investment_action");
+      if (coverage && !coverage.shareholding) exclude.push("sec_shareholding");
+      // The supplementary panels carry the deepest valuation math — keep
+      // valuation_detail always on (it's the most-asked-for content), but
+      // skip the EPS bridge / forecasts-vs-actuals panels when the memo had
+      // no forecasts or valuation framework to anchor them to.
+      if (coverage && !coverage.forecasts) exclude.push("sup_eps_bridge");
+      if (coverage && !coverage.forecasts) exclude.push("sup_financials_actuals");
+
       generateAbort.current?.abort();
       const controller = new AbortController();
       generateAbort.current = controller;
@@ -1087,6 +1116,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
         type: "START_GENERATION",
         startedAt: new Date().toISOString(),
         resumeFromIdx,
+        excludeSectionIds: exclude,
       });
       dispatch({ type: "SET_LLM_STATE", state: { kind: "loading" } });
 
@@ -1112,23 +1142,6 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       // User priorities deliberately NOT threaded into section gen anymore;
       // the dashboard-only PrioritiesAnswer pipeline handles them after
       // the memo completes.
-      // Coverage-driven skip list — the user's principle: the follow-up
-      // memo should only contain what the original memo actually covered.
-      // Sections without a clear analog in the source memo are dropped.
-      const coverage = state.memoCoverage;
-      const exclude: CanonicalSectionId[] = [];
-      // ALWAYS exclude the "Updated Investment View" section. The analyst
-      // does not want an AI-generated investment recommendation in any
-      // part of the output — the memo presents facts; the human draws the
-      // conclusion. (This was sec_investment_action.)
-      exclude.push("sec_investment_action");
-      if (coverage && !coverage.shareholding) exclude.push("sec_shareholding");
-      // The supplementary panels carry the deepest valuation math — keep
-      // valuation_detail always on (it's the most-asked-for content), but
-      // skip the EPS bridge / forecasts-vs-actuals panels when the memo had
-      // no forecasts or valuation framework to anchor them to.
-      if (coverage && !coverage.forecasts) exclude.push("sup_eps_bridge");
-      if (coverage && !coverage.forecasts) exclude.push("sup_financials_actuals");
 
       const result = await runSectionGeneration({
         project: {

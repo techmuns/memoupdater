@@ -175,7 +175,9 @@ export function WorkspacePage() {
   const progressByStep = useMemo<Partial<Record<MissionStepId, RailProgress>>>(
     () => {
       const passes = state.researchProgress.passes;
-      const sections = state.progress.sections;
+      // Skipped sections (not drafted for this memo) are excluded from the
+      // count so the analyst sees N of the sections actually being generated.
+      const sections = state.progress.sections.filter((s) => !s.skipped);
       const out: Partial<Record<MissionStepId, RailProgress>> = {};
       if (passes.some((p) => p.status !== "pending")) {
         out.research = {
@@ -525,7 +527,9 @@ export function WorkspacePage() {
                 )}
 
                 {(memoLoading || memoError) && (
-                  <SectionProgressList sections={state.progress.sections} />
+                  <SectionProgressList
+                    sections={state.progress.sections.filter((s) => !s.skipped)}
+                  />
                 )}
 
                 {memoError && state.progress.failedSectionId && (

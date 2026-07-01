@@ -753,6 +753,12 @@ export interface SectionRunState {
   attempt: 0 | 1 | 2;
   errorCode?: LlmGenerationErrorCode;
   errorMessage?: string;
+  // True when the orchestrator has decided not to generate this section for
+  // this memo (e.g. the original memo never covered shareholding, or the
+  // always-excluded Updated Investment View). Skipped sections are hidden from
+  // the progress UI and the section count so the analyst only ever sees the
+  // sections actually being drafted.
+  skipped?: boolean;
 }
 
 export interface MemoGenerationProgress {
