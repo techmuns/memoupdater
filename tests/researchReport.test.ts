@@ -58,8 +58,20 @@ const ok = (section: string, markdown = "Body"): ResearchReportSectionResponse =
   ok: true,
   section: section as ResearchReportSectionResponse extends { section: infer S } ? S : never,
   markdown,
-  sources: [{ url: "https://x.com" }],
+  sources: [{ url: `https://x.com/${section}` }],
   notDisclosed: [],
+  findings: [
+    {
+      id: `${section}_f1`,
+      category: "other",
+      title: `${section} finding`,
+      summary: "A sourced fact with a number: 12%.",
+      impact: "neutral",
+      relevance: "matters",
+      sources: [{ title: "S", url: `https://x.com/${section}` }],
+    },
+  ],
+  unresolvedQuestions: [],
 });
 
 function makeArgs(
@@ -87,6 +99,9 @@ describe("runFullResearchReport", () => {
     if (res.outcome !== "complete") return;
     expect(res.report.sections.map((s) => s.id)).toEqual([...RESEARCH_REPORT_SECTION_ORDER]);
     expect(res.report.company).toBe("RateGain Travel Technologies");
+    // Findings from every section are assembled into ResearchFindings for the memo.
+    expect(res.research.findings.length).toBe(RESEARCH_REPORT_SECTION_ORDER.length);
+    expect(res.research.findings[0].id).toContain("__");
   });
 
   it("returns complete_with_warnings when a section fails after retry", async () => {

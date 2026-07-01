@@ -1344,6 +1344,10 @@ export type ResearchReportSectionResponse =
       markdown: string;
       sources: ReportSource[];
       notDisclosed: string[];
+      // Structured, grounded findings emitted alongside the prose — assembled
+      // client-side into ResearchFindings that feed the memo drafter.
+      findings: ResearchFinding[];
+      unresolvedQuestions: string[];
       providerMetadata?: ResearchReportProviderMetadata;
     }
   | {

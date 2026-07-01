@@ -83,6 +83,20 @@ Then a ~100-word "Variance Commentary" covering: divisional/segmental performanc
 An updated conclusion from a portfolio manager's perspective. Classify the thesis as one of: "stronger than original memo / broadly on track / mixed but monitorable / materially weakened / broken thesis." Support with 3–5 bullets. Be explicit about what would make you add, hold, reduce, or exit. List the top 3 things to monitor over the next 12 months.`,
 };
 
+// Suggested finding category per section, so the structured findings land in
+// the right memo section (the memo drafter filters findings by category).
+const SECTION_CATEGORY_HINT: Record<ResearchReportSectionId, string> = {
+  stock_valuation: "valuation",
+  executive_update: "other",
+  shareholding: "filings",
+  industry_regulatory: "macro (or ai_tech_risk for tech/AI risk)",
+  corporate_events: "filings (or other)",
+  management_governance: "management",
+  concall: "guidance (or management)",
+  memo_vs_actual: "financials",
+  updated_view: "other",
+};
+
 export interface BuiltReportPrompt {
   system: string;
   user: string;
@@ -110,7 +124,12 @@ Research window: ${req.detection.researchStart ?? "memo date"} → ${req.detecti
 
 ${instruction}${memoBlock}${compactNote}
 
-Return JSON with: "markdown" (this section as Markdown prose/tables), "sources" (every web source used: url, title, date), and "notDisclosed" (datapoints you could not verify).`;
+Return JSON with:
+- "markdown": this section as Markdown prose/tables (the human-readable report).
+- "sources": every web source used (url, title, date).
+- "notDisclosed": datapoints you could not verify.
+- "findings": ${req.retryCompact ? "2–4" : "3–6"} structured, INDIVIDUALLY-SOURCED findings capturing this section's most decision-relevant facts and numbers — these feed a downstream memo, so each MUST be self-contained and carry the exact figure/date in "summary" (no "see above"). Each finding: { id (short slug), category (prefer "${SECTION_CATEGORY_HINT[req.section]}"), title, summary (the fact WITH its number/date), impact ("positive"|"negative"|"neutral"|"watch"), relevance (why it matters vs the memo), sources ([{title,url,tier,date,note}]; tier ∈ official|company|exchange|transcript|press|market_data|other), thesisCheckpointId (null), linkedFlagId (null), linkedResearchTaskId (null) }. Only include findings you can source; do not invent numbers.
+- "unresolvedQuestions": anything material you could not resolve.`;
 
   return { system: SHARED_PREAMBLE, user };
 }

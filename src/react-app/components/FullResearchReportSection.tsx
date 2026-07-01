@@ -30,8 +30,8 @@ export function FullResearchReportSection() {
   return (
     <>
       <Panel
-        eyebrow="Deep research"
-        title="Comprehensive research report"
+        eyebrow="Step 3"
+        title="Research latest developments"
         actions={
           success ? (
             <Badge tone={failedCount > 0 ? "warning" : "success"} dot>
@@ -77,8 +77,8 @@ export function FullResearchReportSection() {
               {loading
                 ? "Researching…"
                 : success
-                  ? "Re-run full research"
-                  : "Generate full research report"}
+                  ? "Re-run research"
+                  : "Run comprehensive research"}
             </Button>
 
             {(loading || failedCount > 0) &&

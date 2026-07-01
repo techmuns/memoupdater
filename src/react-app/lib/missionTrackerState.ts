@@ -56,7 +56,7 @@ export interface MissionTrackerStateSlice {
 const LABELS: Record<MissionStepId, { label: string; helper: string }> = {
   upload:   { label: "Upload memo",         helper: "Drop the original memo to begin" },
   detect:   { label: "Extract insights",    helper: "Parse text and analyze the memo with AI" },
-  research: { label: "Run research",        helper: "Six focused web-search passes" },
+  research: { label: "Run research",        helper: "Comprehensive company-wide research" },
   generate: { label: "Draft <3-page memo",  helper: "Section-by-section, with sourced facts" },
   review:   { label: "Download / print",    helper: "PDF, ready for the analyst" },
 };

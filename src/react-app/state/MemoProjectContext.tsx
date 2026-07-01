@@ -33,7 +33,6 @@ import type {
   ResearchFindings,
   ResearchGenerationState,
   ResearchPassId,
-  ResearchPassResponse,
   ResearchPassRunState,
   PrioritiesAnswerState,
   ResearchProgress,
@@ -63,10 +62,7 @@ import {
 import {
   RESEARCH_PASS_IDS,
   RESEARCH_PASS_TITLES,
-  buildCompactPassDna,
-  buildCompanyAliases,
   detectionToResearchDetectionInput,
-  runResearchPasses,
 } from "../lib/researchPasses";
 import { buildMemoUnderstandingDigest } from "../lib/memoUnderstandingSummary";
 import { fetchCurrentPrice } from "../lib/livePrice";
@@ -808,9 +804,6 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const perPassResultsRef = useRef<
-    Map<ResearchPassId, ResearchPassResponse & { ok: true }>
-  >(new Map());
 
   // Phase 6A: Memo Understanding Engine.
   const runMemoUnderstandingOrchestrated = useCallback(async (): Promise<void> => {
@@ -935,201 +928,6 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     understandGateBlocking,
   ]);
 
-  const runResearchOrchestrated = useCallback(
-    async (mode: "fresh" | "retry_failed"): Promise<void> => {
-      if (!state.dna || !state.extraction || !state.initialFile) return;
-      const periodLabel =
-        state.periodOverride.periodLabel ??
-        (state.detection?.best ? renderPeriodLabel(state.detection.best) : "");
-      if (!periodLabel) return;
-
-      const companyName =
-        state.selectedCompany?.companyName ??
-        state.periodOverride.detectedCompany ??
-        state.detection?.detectedCompany ??
-        state.initialFile.filename.replace(/\.[^.]+$/, "");
-      const resolvedTicker =
-        state.selectedCompany?.ticker ?? state.detection?.detectedTicker;
-      // When the user picked a company, it overrides whatever the detector
-      // guessed for the alias set (name + ticker drive the web-search query
-      // variants), so a mis-detected segment name never reaches research.
-      const detectionForAliases =
-        state.selectedCompany && state.detection
-          ? {
-              ...state.detection,
-              detectedCompany: state.selectedCompany.companyName,
-              detectedTicker: state.selectedCompany.ticker,
-            }
-          : state.detection;
-      const aliases = buildCompanyAliases(
-        detectionForAliases,
-        { ticker: resolvedTicker ?? state.dna.projectId, companyName },
-        state.dna,
-      );
-      const compactDna = buildCompactPassDna(state.dna);
-      const baseDetection = detectionToResearchDetectionInput(
-        state.detection,
-        companyName,
-      );
-      baseDetection.detectedCompany = companyName;
-      baseDetection.periodLabel = periodLabel;
-      baseDetection.researchStart = state.periodOverride.researchStart;
-      baseDetection.memoWrittenOn = state.detection?.memoWrittenOn;
-
-      // Issue the abort controller up here so the price fetch shares its
-      // signal — cancelling research also cancels the in-flight quote.
-      researchAbort.current?.abort();
-      const controller = new AbortController();
-      researchAbort.current = controller;
-
-      // Server-fetch the day's live price so the research passes (and later
-      // section generation) don't have to rely on the LLM finding it via
-      // web_search — that path picked up stale news-article snippets. The
-      // helper is safe-by-construction (returns null on any failure).
-      const livePrice = await fetchCurrentPrice(
-        state.selectedCompany,
-        controller.signal,
-      );
-      if (livePrice) baseDetection.currentPrice = livePrice;
-      if (controller.signal.aborted) return;
-
-      const understanding =
-        state.understanding.kind === "success"
-          ? state.understanding.understanding
-          : null;
-      const memoUnderstandingDigest = understanding
-        ? buildMemoUnderstandingDigest(understanding)
-        : undefined;
-      // User priorities are NOT threaded into research/section prompts anymore.
-      // The principle: the downloadable memo is generic and unaffected by
-      // per-PM asks. Priority Q&A is generated separately, dashboard-only,
-      // via /api/generate/priorities-answer after the memo completes.
-      const baseRequest = {
-        project: {
-          id: state.dna.projectId,
-          ticker: aliases.ticker,
-          companyName,
-          sector: state.selectedCompany?.sector,
-        },
-        companyAliases: aliases,
-        dna: compactDna,
-        detection: baseDetection,
-        memoUnderstandingDigest,
-      };
-
-      const passesToRun =
-        mode === "retry_failed"
-          ? [...state.researchProgress.failedPassIds]
-          : [...RESEARCH_PASS_IDS];
-
-      if (mode === "fresh") {
-        perPassResultsRef.current = new Map();
-      }
-
-      dispatch({
-        type: "START_RESEARCH_RUN",
-        startedAt: new Date().toISOString(),
-        runPassIds: passesToRun,
-        preserveExistingSuccesses: mode === "retry_failed",
-      });
-      dispatch({ type: "SET_RESEARCH_STATE", state: { kind: "loading" } });
-
-      const result = await runResearchPasses({
-        baseRequest,
-        thesisCheckpoints: state.dna.thesisCheckpoints,
-        apiCall: (req, signal) => api.researchPass(req, signal),
-        signal: controller.signal,
-        passesToRun,
-        existing: perPassResultsRef.current,
-        onPassStart: (passId, attempt) => {
-          dispatch({ type: "RESEARCH_PASS_STARTED", passId, attempt });
-        },
-        onPassDone: (passId, value) => {
-          perPassResultsRef.current.set(passId, value);
-          dispatch({
-            type: "RESEARCH_PASS_SUCCESS",
-            passId,
-            findingCount: value.findings.length,
-          });
-        },
-        onPassFail: (passId, code, message) => {
-          dispatch({ type: "RESEARCH_PASS_FAILED", passId, code, message });
-        },
-      });
-
-      if (researchAbort.current !== controller) return;
-      researchAbort.current = null;
-
-      if (result.outcome === "aborted") {
-        return;
-      }
-
-      if (result.outcome === "failed") {
-        dispatch({
-          type: "RESEARCH_RUN_TERMINAL",
-          kind: "failed",
-          failedPassIds: result.failedPassIds,
-        });
-        dispatch({
-          type: "SET_RESEARCH_STATE",
-          state: {
-            kind: "error",
-            code: result.code,
-            message: result.message,
-          },
-        });
-        dispatch({ type: "SET_RESEARCH", research: null });
-        return;
-      }
-
-      // complete OR complete_with_warnings — both enable Step 4.
-      dispatch({
-        type: "RESEARCH_RUN_TERMINAL",
-        kind: result.outcome,
-        failedPassIds: result.failedPassIds,
-      });
-      dispatch({ type: "SET_RESEARCH", research: result.research });
-      dispatch({
-        type: "SET_RESEARCH_STATE",
-        state: {
-          kind: "success",
-          research: result.research,
-          providerMetadata: {
-            providerName: "openai",
-            modelUsed: "gpt-research-pass",
-          },
-          warnings: [],
-        },
-      });
-    },
-    [
-      state.dna,
-      state.extraction,
-      state.initialFile,
-      state.detection,
-      state.periodOverride,
-      state.researchProgress.failedPassIds,
-      state.understanding,
-      state.userResearchPriorities,
-      state.selectedCompany,
-    ],
-  );
-
-  const runResearch = useCallback(
-    (): Promise<void> => runResearchOrchestrated("fresh"),
-    [runResearchOrchestrated],
-  );
-
-  const retryFailedResearchPasses = useCallback(
-    (): Promise<void> => runResearchOrchestrated("retry_failed"),
-    [runResearchOrchestrated],
-  );
-
-  const retryAllResearch = useCallback(
-    (): Promise<void> => runResearchOrchestrated("fresh"),
-    [runResearchOrchestrated],
-  );
-
   // Stage 1: generate the comprehensive company-wide research report. Runs its
   // own set of web-grounded section calls (independent of the narrowed passes),
   // stores the full report, and is the foundation for the report-driven memo
@@ -1152,6 +950,10 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     reportAbort.current = controller;
 
     dispatch({ type: "START_REPORT" });
+    // The comprehensive research is now the single research step: it also
+    // drives the memo-facing research state (findings assembled from the
+    // report sections), so the memo drafter unlocks on success.
+    dispatch({ type: "SET_RESEARCH_STATE", state: { kind: "loading" } });
 
     const memoContext = state.extraction.text?.trim() || undefined;
 
@@ -1189,15 +991,33 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
 
     if (result.outcome === "aborted") {
       dispatch({ type: "SET_REPORT_STATE", state: { kind: "idle" } });
+      dispatch({ type: "SET_RESEARCH_STATE", state: { kind: "idle" } });
     } else if (result.outcome === "failed") {
       dispatch({
         type: "SET_REPORT_STATE",
+        state: { kind: "error", code: result.code, message: result.message },
+      });
+      dispatch({
+        type: "SET_RESEARCH_STATE",
         state: { kind: "error", code: result.code, message: result.message },
       });
     } else {
       dispatch({
         type: "SET_REPORT_STATE",
         state: { kind: "success", report: result.report },
+      });
+      dispatch({ type: "SET_RESEARCH", research: result.research });
+      dispatch({
+        type: "SET_RESEARCH_STATE",
+        state: {
+          kind: "success",
+          research: result.research,
+          providerMetadata: {
+            providerName: "openai",
+            modelUsed: "gpt-research-report",
+          },
+          warnings: [],
+        },
       });
     }
   }, [
@@ -1208,6 +1028,12 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     state.periodOverride,
     state.selectedCompany,
   ]);
+
+  // The comprehensive report IS the single research step now. These names are
+  // kept so existing callers (research button, retries) route to it.
+  const runResearch = generateFullResearchReport;
+  const retryFailedResearchPasses = generateFullResearchReport;
+  const retryAllResearch = generateFullResearchReport;
 
   const runOrchestratedGeneration = useCallback(
     async (

@@ -34,6 +34,9 @@ import {
   REPORT_SECTION_OPENAI_SCHEMA,
   coerceReportSection,
 } from "./reportSchema";
+import { normalizePassNulls } from "./passSchema";
+import { enforceSourceGrounding } from "./validate";
+import type { ResearchFindings } from "@shared/types";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const REPORT_MAX_OUTPUT_TOKENS = 9_000;
@@ -140,7 +143,7 @@ export async function handleResearchReportSection(
       return c.json(fail(translateCode(call.code), call.message, section, readiness.provider, readiness.model));
     }
 
-    const coerced = coerceReportSection(call.parsed);
+    const coerced = coerceReportSection(normalizePassNulls(call.parsed));
     if (!coerced) {
       return c.json(fail("parse_error", "Report section returned malformed or empty content.", section, readiness.provider, readiness.model));
     }
@@ -150,6 +153,26 @@ export async function handleResearchReportSection(
     const harvested = harvestWebSources(call.payload);
     const sources = mergeSources(coerced.sources, harvested);
 
+    // Ground the structured findings against the harvested web sources — reuse
+    // the exact downgrade rules the per-pass route uses, so the memo drafter
+    // receives findings of the same quality.
+    const shell: ResearchFindings = {
+      generatedAt: new Date().toISOString(),
+      company: req.companyAliases.longName,
+      researchWindow: {
+        startIsoMonth: req.detection.researchStart ?? "",
+        endIsoMonth: req.detection.researchCurrent,
+      },
+      findings: coerced.findings,
+      positiveDevelopments: [],
+      negativeDevelopments: [],
+      neutralOrWatch: [],
+      thesisCheckpointImpact: [],
+      unresolvedQuestions: coerced.unresolvedQuestions,
+      warnings: [],
+    };
+    const grounded = enforceSourceGrounding(shell, harvested);
+
     console.log(
       JSON.stringify({
         event: "llm_report_section_sources",
@@ -157,6 +180,7 @@ export async function handleResearchReportSection(
         webSearchCallCount: harvested.webSearchCallCount,
         urlCitationCount: harvested.urlCitationCount,
         mergedSources: sources.length,
+        findings: grounded.findings.findings.length,
         markdownLen: coerced.markdown.length,
       }),
     );
@@ -167,6 +191,8 @@ export async function handleResearchReportSection(
       markdown: coerced.markdown,
       sources,
       notDisclosed: coerced.notDisclosed,
+      findings: grounded.findings.findings,
+      unresolvedQuestions: grounded.findings.unresolvedQuestions,
       providerMetadata: {
         providerName: "openai",
         modelUsed: readiness.model,

@@ -36,6 +36,58 @@ const TIER_VALUES: SourceTier[] = [
   "other",
 ];
 
+// The findings array schema — shared by the per-pass research route and the
+// comprehensive research-report route (which emits both prose AND these
+// structured findings, so the memo pipeline is fed identically).
+export const RESEARCH_FINDING_ARRAY_SCHEMA = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "category",
+      "title",
+      "summary",
+      "impact",
+      "relevance",
+      "sources",
+      "thesisCheckpointId",
+      "linkedFlagId",
+      "linkedResearchTaskId",
+    ],
+    properties: {
+      id: { type: "string" },
+      category: { type: "string", enum: CATEGORY_VALUES },
+      title: { type: "string" },
+      summary: { type: "string" },
+      impact: { type: "string", enum: IMPACT_VALUES },
+      relevance: { type: "string" },
+      thesisCheckpointId: { type: ["string", "null"] },
+      // Phase 6A: optional links back to MemoUnderstanding ids — set
+      // by the model when the finding directly updates a flagged
+      // detail or answers a queued research task.
+      linkedFlagId: { type: ["string", "null"] },
+      linkedResearchTaskId: { type: ["string", "null"] },
+      sources: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["title", "url", "tier", "date", "note"],
+          properties: {
+            title: { type: "string" },
+            url: { type: "string" },
+            tier: { type: ["string", "null"], enum: [...TIER_VALUES, null] },
+            date: { type: ["string", "null"] },
+            note: { type: ["string", "null"] },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
 // OpenAI Responses-API strict json_schema: every property must appear in
 // `required`. Optional fields use nullable type unions; normalizePassNulls
 // strips them before the route invokes enforceSourceGrounding.
@@ -44,54 +96,7 @@ export const RESEARCH_PASS_OPENAI_SCHEMA: object = {
   additionalProperties: false,
   required: ["findings", "unresolvedQuestions", "warnings"],
   properties: {
-    findings: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: [
-          "id",
-          "category",
-          "title",
-          "summary",
-          "impact",
-          "relevance",
-          "sources",
-          "thesisCheckpointId",
-          "linkedFlagId",
-          "linkedResearchTaskId",
-        ],
-        properties: {
-          id: { type: "string" },
-          category: { type: "string", enum: CATEGORY_VALUES },
-          title: { type: "string" },
-          summary: { type: "string" },
-          impact: { type: "string", enum: IMPACT_VALUES },
-          relevance: { type: "string" },
-          thesisCheckpointId: { type: ["string", "null"] },
-          // Phase 6A: optional links back to MemoUnderstanding ids — set
-          // by the model when the finding directly updates a flagged
-          // detail or answers a queued research task.
-          linkedFlagId: { type: ["string", "null"] },
-          linkedResearchTaskId: { type: ["string", "null"] },
-          sources: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              required: ["title", "url", "tier", "date", "note"],
-              properties: {
-                title: { type: "string" },
-                url: { type: "string" },
-                tier: { type: ["string", "null"], enum: [...TIER_VALUES, null] },
-                date: { type: ["string", "null"] },
-                note: { type: ["string", "null"] },
-              },
-            },
-          },
-        },
-      },
-    },
+    findings: RESEARCH_FINDING_ARRAY_SCHEMA,
     unresolvedQuestions: { type: "array", items: { type: "string" } },
     warnings: { type: "array", items: { type: "string" } },
   },

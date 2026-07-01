@@ -1,6 +1,8 @@
 import type {
   FullResearchReport,
   ResearchErrorCode,
+  ResearchFinding,
+  ResearchFindings,
   ResearchReportDetectionInput,
   ResearchReportProjectRef,
   ResearchReportSection,
@@ -51,6 +53,9 @@ export type RunReportResult =
   | {
       outcome: "complete" | "complete_with_warnings";
       report: FullResearchReport;
+      // Structured findings assembled from every section — fed to the memo
+      // drafter exactly like the old narrowed passes were.
+      research: ResearchFindings;
       failed: ResearchReportSectionId[];
     }
   | { outcome: "failed"; code: ResearchErrorCode; message: string; failed: ResearchReportSectionId[] }
@@ -62,6 +67,8 @@ export async function runFullResearchReport(
   const ids = [...RESEARCH_REPORT_SECTION_ORDER];
   const done = new Map<ResearchReportSectionId, ResearchReportSection>();
   const failed: ResearchReportSectionId[] = [];
+  const allFindings: ResearchFinding[] = [];
+  const allUnresolved: string[] = [];
 
   const concurrency = Math.max(1, args.concurrency ?? DEFAULT_CONCURRENCY);
   let cursor = 0;
@@ -114,6 +121,11 @@ export async function runFullResearchReport(
             res.value.notDisclosed.length > 0 ? res.value.notDisclosed : undefined,
         };
         done.set(id, section);
+        // Namespace finding ids by section so ids stay unique across sections.
+        for (const f of res.value.findings) {
+          allFindings.push({ ...f, id: `${id}__${f.id}` });
+        }
+        allUnresolved.push(...res.value.unresolvedQuestions);
         args.onSectionDone(section);
       } else {
         failed.push(id);
@@ -141,18 +153,80 @@ export async function runFullResearchReport(
     };
   }
 
+  const generatedAt = new Date().toISOString();
   const report: FullResearchReport = {
     company: args.companyAliases.longName,
     ticker: args.project.ticker,
     periodLabel: args.detection.periodLabel,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     sections,
   };
+
+  const research = assembleResearchFindings({
+    company: args.companyAliases.longName,
+    window: {
+      startIsoMonth: args.detection.researchStart ?? "",
+      endIsoMonth: args.detection.researchCurrent,
+    },
+    generatedAt,
+    findings: allFindings,
+    unresolvedQuestions: allUnresolved,
+  });
 
   return {
     outcome: failed.length > 0 ? "complete_with_warnings" : "complete",
     report,
+    research,
     failed,
+  };
+}
+
+// Build the ResearchFindings the memo drafter consumes from the aggregated
+// per-section findings: dedupe by primary source URL, and summarize the
+// positive/negative/watch developments from finding impact. thesisCheckpoint
+// impact is left empty (the report is memo-agnostic; the memo prompt tolerates
+// an empty array).
+function assembleResearchFindings(args: {
+  company: string;
+  window: { startIsoMonth: string; endIsoMonth: string };
+  generatedAt: string;
+  findings: ResearchFinding[];
+  unresolvedQuestions: string[];
+}): ResearchFindings {
+  const byKey = new Map<string, ResearchFinding>();
+  const noKey: ResearchFinding[] = [];
+  for (const f of args.findings) {
+    const key = f.sources.find((s) => s.url)?.url?.toLowerCase().replace(/\/+$/, "");
+    if (!key) {
+      noKey.push(f);
+      continue;
+    }
+    if (!byKey.has(key)) byKey.set(key, f);
+  }
+  const findings = [...byKey.values(), ...noKey];
+
+  const positiveDevelopments: string[] = [];
+  const negativeDevelopments: string[] = [];
+  const neutralOrWatch: string[] = [];
+  for (const f of findings) {
+    if (f.impact === "positive") positiveDevelopments.push(f.title);
+    else if (f.impact === "negative") negativeDevelopments.push(f.title);
+    else neutralOrWatch.push(f.title);
+  }
+
+  const unresolvedQuestions = Array.from(new Set(args.unresolvedQuestions)).slice(0, 12);
+
+  return {
+    generatedAt: args.generatedAt,
+    company: args.company,
+    researchWindow: args.window,
+    findings,
+    positiveDevelopments: positiveDevelopments.slice(0, 12),
+    negativeDevelopments: negativeDevelopments.slice(0, 12),
+    neutralOrWatch: neutralOrWatch.slice(0, 12),
+    thesisCheckpointImpact: [],
+    unresolvedQuestions,
+    warnings: [],
   };
 }
 
