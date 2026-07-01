@@ -669,6 +669,10 @@ export interface GenerateMemoSectionRequest {
   // so the memo body explicitly addresses the items the user asked us
   // to test in addition to the auto-extracted flags.
   userPriorities?: string;
+  // Stage 2: the relevant slice(s) of the stored comprehensive research
+  // report, so this section is CONDENSED from the long report prose (not
+  // just the structured findings). Clipped client-side per section.
+  reportContext?: { title: string; markdown: string }[];
   retryCompact?: boolean;
 }
 

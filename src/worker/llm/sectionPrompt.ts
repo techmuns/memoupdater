@@ -410,6 +410,28 @@ function buildUserPrompt(req: GenerateMemoSectionRequest): string {
     }
   }
 
+  // Stage 2: the relevant slice(s) of the comprehensive internal research
+  // report. This is the long, sourced research this run produced — CONDENSE
+  // the section from it (structure, interpretation, and the specific figures
+  // it states). Its numbers are from the SAME grounded research as the
+  // findings above and carry inline sources, so they are usable under the
+  // zero-margin rule (cite the report's stated source).
+  if (req.reportContext && req.reportContext.length > 0) {
+    lines.push("");
+    lines.push(
+      "# 4b. Comprehensive research report — RELEVANT sections (condense the memo from THIS)",
+    );
+    lines.push(
+      "Treat the sections below as authoritative, sourced research from this run. Distil them into a tight memo section, staying faithful to what the ORIGINAL memo actually covered (do not introduce topics the memo never tracked). Numbers stated here (with their inline source) are usable exactly like a research finding.",
+    );
+    const reportCap = retryCompact ? 2000 : 3800;
+    for (const rc of req.reportContext) {
+      lines.push("");
+      lines.push(`## ${rc.title}`);
+      lines.push(truncate(rc.markdown, reportCap));
+    }
+  }
+
   // Phase 6A: memo-specific anchor. When present, give the section a
   // memo-anchored "what the original memo argued" recap so the section
   // body answers "does this still hold?" rather than drifting into

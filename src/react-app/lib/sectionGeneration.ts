@@ -1,6 +1,7 @@
 import type {
   CanonicalSectionId,
   FollowUpMemo,
+  FullResearchReport,
   GenerateMemoSectionRequest,
   GenerateMemoSectionResponse,
   LlmGenerationErrorCode,
@@ -12,8 +13,50 @@ import type {
   ResearchFinding,
   ResearchFindingCategory,
   ResearchFindings,
+  ResearchReportSectionId,
   ResearchThesisCheckpointImpact,
 } from "@shared/types";
+
+// Stage 2: which comprehensive-report sections feed each memo section. The
+// memo is condensed from these report slices (guided by the memo insights),
+// so the drafter works from the rich prose, not just the structured findings.
+const MEMO_SECTION_TO_REPORT: Record<
+  CanonicalSectionId,
+  ResearchReportSectionId[]
+> = {
+  sec_thesis_scorecard: ["executive_update", "memo_vs_actual", "updated_view"],
+  sec_what_changed: ["executive_update", "industry_regulatory"],
+  sec_shareholding: ["shareholding"],
+  sec_industry_regulatory: ["industry_regulatory"],
+  sec_corporate_events: ["corporate_events", "management_governance", "concall"],
+  sec_investment_action: ["updated_view"],
+  sup_valuation_detail: ["stock_valuation"],
+  sup_eps_bridge: ["memo_vs_actual"],
+  sup_financials_actuals: ["memo_vs_actual"],
+};
+
+function selectReportContext(
+  report: FullResearchReport | null | undefined,
+  sectionId: CanonicalSectionId,
+  perSectionCharCap: number,
+): { title: string; markdown: string }[] | undefined {
+  if (!report) return undefined;
+  const wanted = MEMO_SECTION_TO_REPORT[sectionId] ?? [];
+  const out: { title: string; markdown: string }[] = [];
+  for (const rid of wanted) {
+    const section = report.sections.find((s) => s.id === rid);
+    if (!section || !section.markdown.trim()) continue;
+    const md = section.markdown.trim();
+    out.push({
+      title: section.title,
+      markdown:
+        md.length <= perSectionCharCap
+          ? md
+          : `${md.slice(0, perSectionCharCap)}\n…[truncated]`,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
 // Phase 6H: ids, titles, prefix helpers from the single shared source.
 // Re-exported because MemoProjectContext + MemoReview import them here.
 import {
@@ -392,6 +435,9 @@ export interface RunSectionGenerationArgs {
   dna: MemoDNA;
   detection?: ResearchDetectionInput;
   research: ResearchFindings | null;
+  // Stage 2: the stored comprehensive report. Each section is condensed from
+  // its relevant slices (see MEMO_SECTION_TO_REPORT).
+  report?: FullResearchReport | null;
   initialMemoId?: string;
   // Phase 6A: optional MemoUnderstanding digest. When present, each
   // section request carries it and the section prompt adds the
@@ -605,6 +651,11 @@ function buildSectionRequest(
     initialMemoId: args.initialMemoId,
     memoUnderstandingDigest: args.memoUnderstandingDigest,
     userPriorities: args.userPriorities,
+    reportContext: selectReportContext(
+      args.report,
+      sectionId,
+      retryCompact ? 2200 : 4200,
+    ),
     retryCompact: retryCompact ? true : undefined,
   };
   if (sectionId === "sec_investment_action") {

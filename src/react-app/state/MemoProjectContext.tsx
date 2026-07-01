@@ -1141,6 +1141,10 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
             }
           : undefined,
         research,
+        report:
+          state.fullReport.kind === "success"
+            ? state.fullReport.report
+            : null,
         initialMemoId: state.initialFile.id,
         memoUnderstandingDigest: memoUnderstandingDigestForGen,
         apiCall: (req, signal) => api.generateMemoSection(req, signal),
