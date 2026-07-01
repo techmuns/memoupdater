@@ -13,6 +13,10 @@ import type {
   ExtractionResult,
   ExtractionStatus,
   FollowUpMemo,
+  FullResearchReportState,
+  ResearchReportSectionId,
+  ResearchReportSection,
+  ResearchReportSectionRunState,
   LlmGenerationErrorCode,
   LlmGenerationState,
   LlmGenerationWarning,
@@ -68,6 +72,11 @@ import { buildMemoUnderstandingDigest } from "../lib/memoUnderstandingSummary";
 import { fetchCurrentPrice } from "../lib/livePrice";
 import { getLlmGateToken } from "../lib/llmGateToken";
 import { APP_BUILD_ID } from "@shared/buildId";
+import {
+  RESEARCH_REPORT_SECTION_ORDER,
+  RESEARCH_REPORT_SECTION_TITLES,
+} from "@shared/researchReport";
+import { runFullResearchReport } from "../lib/researchReport";
 
 const GATE_TOKEN_POLL_KEY = "memo.llm.gate";
 
@@ -99,6 +108,12 @@ interface State {
   research: ResearchFindings | null;
   researchState: ResearchGenerationState;
   researchProgress: ResearchProgress;
+  // Stage 1 of the research rearchitecture: the comprehensive, company-wide
+  // research report (kept internally, condensed into the memo in Stage 2, and
+  // used to answer follow-up Q&A in Stage 3). Additive for now — it does not
+  // yet feed memo generation.
+  fullReport: FullResearchReportState;
+  fullReportProgress: ResearchReportSectionRunState[];
   generatedMemo: FollowUpMemo | null;
   llm: LlmGenerationState;
   // Dashboard-only priorities Q&A — never enters the downloadable memo.
@@ -203,6 +218,11 @@ type Action =
   | { type: "SET_SKIP_UNDERSTANDING"; value: boolean }
   | { type: "SET_USER_RESEARCH_PRIORITIES"; value: string }
   | { type: "SET_STALE_CLIENT"; value: boolean }
+  | { type: "START_REPORT" }
+  | { type: "REPORT_SECTION_STARTED"; id: ResearchReportSectionId; attempt: 1 | 2 }
+  | { type: "REPORT_SECTION_SUCCESS"; section: ResearchReportSection }
+  | { type: "REPORT_SECTION_FAILED"; id: ResearchReportSectionId; code: ResearchErrorCode }
+  | { type: "SET_REPORT_STATE"; state: FullResearchReportState }
   | { type: "RESET" };
 
 function buildInitialProgress(): MemoGenerationProgress {
@@ -231,6 +251,15 @@ function buildInitialResearchProgress(): ResearchProgress {
   };
 }
 
+function buildInitialReportProgress(): ResearchReportSectionRunState[] {
+  return RESEARCH_REPORT_SECTION_ORDER.map((id) => ({
+    id,
+    title: RESEARCH_REPORT_SECTION_TITLES[id],
+    status: "pending",
+    attempt: 0,
+  }));
+}
+
 const initialState: State = {
   selectedCompany: null,
   initialFile: null,
@@ -243,6 +272,8 @@ const initialState: State = {
   research: null,
   researchState: { kind: "idle" },
   researchProgress: buildInitialResearchProgress(),
+  fullReport: { kind: "idle" },
+  fullReportProgress: buildInitialReportProgress(),
   generatedMemo: null,
   llm: { kind: "idle" },
   prioritiesAnswer: { kind: "idle" },
@@ -303,6 +334,8 @@ function reducer(state: State, action: Action): State {
         research: null,
         researchState: { kind: "idle" },
         researchProgress: buildInitialResearchProgress(),
+        fullReport: { kind: "idle" },
+        fullReportProgress: buildInitialReportProgress(),
         generatedMemo: null,
         llm: { kind: "idle" },
         progress: buildInitialProgress(),
@@ -563,6 +596,41 @@ function reducer(state: State, action: Action): State {
       return { ...state, userResearchPriorities: action.value };
     case "SET_STALE_CLIENT":
       return { ...state, staleClient: action.value };
+    case "START_REPORT":
+      return {
+        ...state,
+        fullReport: { kind: "loading" },
+        fullReportProgress: buildInitialReportProgress(),
+      };
+    case "REPORT_SECTION_STARTED":
+      return {
+        ...state,
+        fullReportProgress: state.fullReportProgress.map((row) =>
+          row.id === action.id
+            ? { ...row, status: "running", attempt: action.attempt, errorCode: undefined }
+            : row,
+        ),
+      };
+    case "REPORT_SECTION_SUCCESS":
+      return {
+        ...state,
+        fullReportProgress: state.fullReportProgress.map((row) =>
+          row.id === action.section.id
+            ? { ...row, status: "success", errorCode: undefined }
+            : row,
+        ),
+      };
+    case "REPORT_SECTION_FAILED":
+      return {
+        ...state,
+        fullReportProgress: state.fullReportProgress.map((row) =>
+          row.id === action.id
+            ? { ...row, status: "failed", errorCode: action.code }
+            : row,
+        ),
+      };
+    case "SET_REPORT_STATE":
+      return { ...state, fullReport: action.state };
     case "RESET":
       return {
         ...initialState,
@@ -598,6 +666,7 @@ interface MemoProjectContextValue {
   runResearch: () => Promise<void>;
   retryFailedResearchPasses: () => Promise<void>;
   retryAllResearch: () => Promise<void>;
+  generateFullResearchReport: () => Promise<void>;
   generateMemo: (withResearch: boolean) => Promise<void>;
   retryFailedSection: () => Promise<void>;
   retryFullMemo: () => Promise<void>;
@@ -619,6 +688,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
   const researchAbort = useRef<AbortController | null>(null);
   const generateAbort = useRef<AbortController | null>(null);
   const understandAbort = useRef<AbortController | null>(null);
+  const reportAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     api
@@ -1060,6 +1130,85 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     [runResearchOrchestrated],
   );
 
+  // Stage 1: generate the comprehensive company-wide research report. Runs its
+  // own set of web-grounded section calls (independent of the narrowed passes),
+  // stores the full report, and is the foundation for the report-driven memo
+  // (Stage 2) and Q&A (Stage 3).
+  const generateFullResearchReport = useCallback(async (): Promise<void> => {
+    if (!state.dna || !state.extraction || !state.initialFile) return;
+    const periodLabel =
+      state.periodOverride.periodLabel ??
+      (state.detection?.best ? renderPeriodLabel(state.detection.best) : "");
+    const companyName =
+      state.selectedCompany?.companyName ??
+      state.periodOverride.detectedCompany ??
+      state.detection?.detectedCompany ??
+      state.initialFile.filename.replace(/\.[^.]+$/, "");
+    const ticker =
+      state.selectedCompany?.ticker ?? state.detection?.detectedTicker ?? undefined;
+
+    reportAbort.current?.abort();
+    const controller = new AbortController();
+    reportAbort.current = controller;
+
+    dispatch({ type: "START_REPORT" });
+
+    const memoContext = state.extraction.text?.trim() || undefined;
+
+    const result = await runFullResearchReport({
+      project: {
+        id: state.dna.projectId,
+        companyName,
+        ticker,
+        sector: state.selectedCompany?.sector,
+      },
+      companyAliases: {
+        longName: companyName,
+        aliases: ticker ? [ticker] : undefined,
+      },
+      detection: {
+        periodLabel: periodLabel || "the original memo period",
+        researchStart: state.periodOverride.researchStart,
+        researchCurrent:
+          state.detection?.researchCurrent ??
+          new Date().toISOString().slice(0, 7),
+        memoWrittenOn: state.detection?.memoWrittenOn,
+      },
+      memoContext,
+      apiCall: (req, signal) => api.researchReportSection(req, signal),
+      signal: controller.signal,
+      onSectionStart: (id, attempt) =>
+        dispatch({ type: "REPORT_SECTION_STARTED", id, attempt }),
+      onSectionDone: (section) =>
+        dispatch({ type: "REPORT_SECTION_SUCCESS", section }),
+      onSectionFail: (id, code) =>
+        dispatch({ type: "REPORT_SECTION_FAILED", id, code }),
+    });
+
+    if (reportAbort.current !== controller) return;
+
+    if (result.outcome === "aborted") {
+      dispatch({ type: "SET_REPORT_STATE", state: { kind: "idle" } });
+    } else if (result.outcome === "failed") {
+      dispatch({
+        type: "SET_REPORT_STATE",
+        state: { kind: "error", code: result.code, message: result.message },
+      });
+    } else {
+      dispatch({
+        type: "SET_REPORT_STATE",
+        state: { kind: "success", report: result.report },
+      });
+    }
+  }, [
+    state.dna,
+    state.extraction,
+    state.initialFile,
+    state.detection,
+    state.periodOverride,
+    state.selectedCompany,
+  ]);
+
   const runOrchestratedGeneration = useCallback(
     async (
       withResearch: boolean,
@@ -1332,8 +1481,10 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
   const startOver = useCallback(() => {
     researchAbort.current?.abort();
     generateAbort.current?.abort();
+    reportAbort.current?.abort();
     researchAbort.current = null;
     generateAbort.current = null;
+    reportAbort.current = null;
     dispatch({ type: "RESET" });
   }, []);
 
@@ -1365,6 +1516,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       runResearch,
       retryFailedResearchPasses,
       retryAllResearch,
+      generateFullResearchReport,
       generateMemo,
       retryFailedSection,
       retryFullMemo,
@@ -1385,6 +1537,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     runResearch,
     retryFailedResearchPasses,
     retryAllResearch,
+    generateFullResearchReport,
     generateMemo,
     retryFailedSection,
     retryFullMemo,

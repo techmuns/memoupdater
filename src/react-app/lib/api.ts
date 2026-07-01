@@ -14,6 +14,8 @@ import type {
   MemoUnderstandResponse,
   ResearchPassRequest,
   ResearchPassResponse,
+  ResearchReportSectionRequest,
+  ResearchReportSectionResponse,
   ResearchUpdatesRequest,
   ResearchUpdatesResponse,
   StockQuoteRequest,
@@ -223,6 +225,19 @@ export const api = {
   ) =>
     postJson<ResearchPassResponse, ResearchPassRequest>(
       "/api/research/pass",
+      req,
+      {
+        signal,
+        headers: gateHeader(),
+      },
+    ),
+  // Comprehensive research report — one web-grounded section per call.
+  researchReportSection: (
+    req: ResearchReportSectionRequest,
+    signal?: AbortSignal,
+  ) =>
+    postJson<ResearchReportSectionResponse, ResearchReportSectionRequest>(
+      "/api/research/report-section",
       req,
       {
         signal,

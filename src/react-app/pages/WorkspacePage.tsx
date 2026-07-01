@@ -24,6 +24,7 @@ import { UploadSlot } from "../components/ui/UploadSlot";
 import { ExtractionNotice } from "../components/ui/ExtractionNotice";
 import { CompanySearch } from "../components/CompanySearch";
 import { ResearchFindingsCard } from "../components/ResearchFindingsCard";
+import { FullResearchReportSection } from "../components/FullResearchReportSection";
 import { MemoReview } from "../components/MemoReview";
 import { WorkflowRail } from "../components/layout/WorkflowRail";
 import type { RailProgress } from "../components/layout/WorkflowRail";
@@ -481,6 +482,11 @@ export function WorkspacePage() {
               {researchSuccess && !memoSuccess && (
                 <ResearchFindingsCard research={researchSuccess.research} />
               )}
+
+              {/* Stage 1: comprehensive internal research report. Additive for
+                  now — generate it to review its quality; Stage 2 will condense
+                  the memo from it. */}
+              <FullResearchReportSection />
             </>
           )}
 
@@ -565,6 +571,10 @@ export function WorkspacePage() {
                   research={researchSuccess.research}
                 />
               )}
+
+              {/* The internal research report stays available after delivery
+                  (foundation for follow-up Q&A in Stage 3). */}
+              <FullResearchReportSection />
             </>
           )}
         </div>

@@ -1258,3 +1258,119 @@ export interface SelectedCompany {
   country?: string;
   sector?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Comprehensive research report (Stage 1 of the research rearchitecture).
+//
+// Instead of narrowing research to only the memo-flagged anchors, we run a
+// full, company-wide research pass structured to the analyst's master prompt
+// and keep the complete long report internally. The delivered <3-page memo is
+// condensed from it, and a post-delivery Q&A answers follow-ups from it — no
+// repeat research. These types describe that stored report.
+// ---------------------------------------------------------------------------
+
+export type ResearchReportSectionId =
+  | "stock_valuation"
+  | "executive_update"
+  | "shareholding"
+  | "industry_regulatory"
+  | "corporate_events"
+  | "management_governance"
+  | "concall"
+  | "memo_vs_actual"
+  | "updated_view";
+
+// A web source grounding a report section (harvested from the web_search tool).
+export interface ReportSource {
+  url: string;
+  title?: string;
+  date?: string;
+}
+
+export interface ResearchReportSection {
+  id: ResearchReportSectionId;
+  title: string;
+  // The section body as markdown prose (tables allowed), per the master prompt.
+  markdown: string;
+  sources: ReportSource[];
+  // Datapoints the model flagged as "not disclosed" rather than estimating.
+  notDisclosed?: string[];
+}
+
+export interface FullResearchReport {
+  company: string;
+  ticker?: string;
+  periodLabel?: string;
+  generatedAt: string;
+  sections: ResearchReportSection[];
+}
+
+export interface ResearchReportProjectRef {
+  id: string;
+  companyName: string;
+  ticker?: string;
+  sector?: string;
+}
+
+export interface ResearchReportDetectionInput {
+  periodLabel: string;
+  researchStart?: string;
+  researchCurrent: string;
+  memoWrittenOn?: string;
+}
+
+export interface ResearchReportSectionRequest {
+  section: ResearchReportSectionId;
+  project: ResearchReportProjectRef;
+  companyAliases: { longName: string; aliases?: string[] };
+  detection: ResearchReportDetectionInput;
+  // Optional memo context (thesis / financials / target) for the sections that
+  // compare against the original memo (executive update, memo-vs-actual, view).
+  memoContext?: string;
+  retryCompact?: boolean;
+}
+
+export interface ResearchReportProviderMetadata {
+  providerName: LlmProviderName;
+  modelUsed?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+export type ResearchReportSectionResponse =
+  | {
+      ok: true;
+      section: ResearchReportSectionId;
+      markdown: string;
+      sources: ReportSource[];
+      notDisclosed: string[];
+      providerMetadata?: ResearchReportProviderMetadata;
+    }
+  | {
+      ok: false;
+      section: ResearchReportSectionId;
+      code: ResearchErrorCode;
+      message: string;
+      providerName?: LlmProviderName;
+      modelUsed?: string;
+    };
+
+export type ResearchReportSectionStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "failed";
+
+export interface ResearchReportSectionRunState {
+  id: ResearchReportSectionId;
+  title: string;
+  status: ResearchReportSectionStatus;
+  attempt: 0 | 1 | 2;
+  errorCode?: ResearchErrorCode;
+}
+
+export type FullResearchReportState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "success"; report: FullResearchReport }
+  | { kind: "error"; code: ResearchErrorCode | "aborted"; message: string };
