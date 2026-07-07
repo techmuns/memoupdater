@@ -40,7 +40,7 @@ export interface RunReportArgs {
   ) => Promise<ResearchReportSectionResponse>;
   signal?: AbortSignal;
   onSectionStart: (id: ResearchReportSectionId, attempt: 1 | 2) => void;
-  onSectionDone: (section: ResearchReportSection) => void;
+  onSectionDone: (section: ResearchReportSection, findingCount: number) => void;
   onSectionFail: (
     id: ResearchReportSectionId,
     code: ResearchErrorCode,
@@ -126,7 +126,7 @@ export async function runFullResearchReport(
           allFindings.push({ ...f, id: `${id}__${f.id}` });
         }
         allUnresolved.push(...res.value.unresolvedQuestions);
-        args.onSectionDone(section);
+        args.onSectionDone(section, res.value.findings.length);
       } else {
         failed.push(id);
         args.onSectionFail(id, res.value.code, res.value.message);

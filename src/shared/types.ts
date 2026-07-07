@@ -1375,6 +1375,13 @@ export interface ResearchReportSectionRunState {
   status: ResearchReportSectionStatus;
   attempt: 0 | 1 | 2;
   errorCode?: ResearchErrorCode;
+  // Populated on completion — feeds the live research engine's feed:
+  // a one-line summary (from the section prose), the sources it pulled, and
+  // the finding count. All real, no faked data.
+  findingCount?: number;
+  sourceCount?: number;
+  sourceDomains?: string[];
+  summary?: string;
 }
 
 export type FullResearchReportState =

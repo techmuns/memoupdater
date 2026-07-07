@@ -216,7 +216,7 @@ type Action =
   | { type: "SET_STALE_CLIENT"; value: boolean }
   | { type: "START_REPORT" }
   | { type: "REPORT_SECTION_STARTED"; id: ResearchReportSectionId; attempt: 1 | 2 }
-  | { type: "REPORT_SECTION_SUCCESS"; section: ResearchReportSection }
+  | { type: "REPORT_SECTION_SUCCESS"; section: ResearchReportSection; findingCount: number }
   | { type: "REPORT_SECTION_FAILED"; id: ResearchReportSectionId; code: ResearchErrorCode }
   | { type: "SET_REPORT_STATE"; state: FullResearchReportState }
   | { type: "RESET" };
@@ -612,7 +612,15 @@ function reducer(state: State, action: Action): State {
         ...state,
         fullReportProgress: state.fullReportProgress.map((row) =>
           row.id === action.section.id
-            ? { ...row, status: "success", errorCode: undefined }
+            ? {
+                ...row,
+                status: "success",
+                errorCode: undefined,
+                findingCount: action.findingCount,
+                sourceCount: action.section.sources.length,
+                sourceDomains: domainsFromSources(action.section.sources),
+                summary: summarizeMarkdown(action.section.markdown),
+              }
             : row,
         ),
       };
@@ -981,8 +989,8 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       signal: controller.signal,
       onSectionStart: (id, attempt) =>
         dispatch({ type: "REPORT_SECTION_STARTED", id, attempt }),
-      onSectionDone: (section) =>
-        dispatch({ type: "REPORT_SECTION_SUCCESS", section }),
+      onSectionDone: (section, findingCount) =>
+        dispatch({ type: "REPORT_SECTION_SUCCESS", section, findingCount }),
       onSectionFail: (id, code) =>
         dispatch({ type: "REPORT_SECTION_FAILED", id, code }),
     });
@@ -1389,6 +1397,42 @@ export function useMemoProject(): MemoProjectContextValue {
     throw new Error("useMemoProject must be used inside <MemoProjectProvider>");
   }
   return ctx;
+}
+
+// Derive up to 3 distinct source domains from a section's sources — shown in
+// the live engine feed as "screener.in · bseindia.com".
+function domainsFromSources(
+  sources: { url: string }[],
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of sources) {
+    let host = "";
+    try {
+      host = new URL(s.url).hostname.replace(/^www\./, "");
+    } catch {
+      host = s.url.replace(/^https?:\/\//, "").split("/")[0].replace(/^www\./, "");
+    }
+    if (!host || seen.has(host)) continue;
+    seen.add(host);
+    out.push(host);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+// A one-line summary from the section prose for the engine feed: first
+// sentence-ish, stripped of markdown, clipped.
+function summarizeMarkdown(md: string): string {
+  const plain = md
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\|.*\|/g, " ")
+    .replace(/[*_`>#-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const firstStop = plain.search(/[.!?]\s/);
+  const sentence = firstStop > 30 ? plain.slice(0, firstStop + 1) : plain;
+  return sentence.length > 130 ? `${sentence.slice(0, 128)}…` : sentence;
 }
 
 function renderPeriodLabel(p: {

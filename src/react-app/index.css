@@ -233,3 +233,245 @@ body {
     page-break-after: avoid;
   }
 }
+
+/* ===========================================================================
+   Research engine — the immersive "agent swarm" stage shown while research +
+   drafting run. A committed dark world (a radar scope belongs on dark); its
+   colours are self-contained so it stays dark inside the light app.
+   =========================================================================== */
+.rengine {
+  --e-bg: #0a0c13;
+  --e-line: rgba(255, 255, 255, 0.09);
+  --e-line2: rgba(255, 255, 255, 0.055);
+  --e-text: #eaecf4;
+  --e-muted: #9096ac;
+  --e-faint: #5a6079;
+  --e-ink: #7c7bff;
+  --e-ink2: #a6a5ff;
+  --e-ink-soft: rgba(124, 123, 255, 0.16);
+  --e-glow: rgba(124, 123, 255, 0.55);
+  --e-good: #37d3a6;
+  --e-good-soft: rgba(55, 211, 166, 0.14);
+  --e-stage: min(64vmin, 460px);
+  position: relative;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  padding: 30px 22px 26px;
+  color: var(--e-text);
+  background:
+    radial-gradient(120vmax 90vmax at 50% -20%, #141936 0%, transparent 55%),
+    radial-gradient(80vmax 60vmax at 90% 120%, #0f1a2b 0%, transparent 50%),
+    var(--e-bg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 30px 80px -50px #000;
+}
+.rengine .re-phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  height: 26px;
+  margin-bottom: 14px;
+}
+.rengine .re-live {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--e-ink);
+  box-shadow: 0 0 10px var(--e-glow);
+  animation: re-soft 1.6s ease-in-out infinite;
+}
+.rengine .re-lbl {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.rengine .re-ct {
+  font-size: 12px;
+  color: var(--e-faint);
+  font-variant-numeric: tabular-nums;
+}
+.rengine .re-wrap {
+  display: flex;
+  gap: 34px;
+  align-items: center;
+  justify-content: center;
+}
+.rengine .re-stage {
+  position: relative;
+  width: var(--e-stage);
+  height: var(--e-stage);
+  flex: 0 0 auto;
+}
+.rengine .re-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--e-line2);
+}
+.rengine .re-ring.r2 { inset: 15%; }
+.rengine .re-ring.r3 { inset: 32%; }
+.rengine .re-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  -webkit-mask: radial-gradient(circle, #000 60%, transparent 71%);
+  mask: radial-gradient(circle, #000 60%, transparent 71%);
+}
+.rengine .re-sweep::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 300deg,
+    rgba(124, 123, 255, 0.14) 350deg, rgba(124, 123, 255, 0.30) 360deg);
+  animation: re-spin 7s linear infinite;
+}
+.rengine .re-wire {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.rengine .re-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  background: radial-gradient(circle at 50% 40%, rgba(124, 123, 255, 0.22), rgba(124, 123, 255, 0.05) 70%);
+  border: 1px solid rgba(124, 123, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 0 60px -6px var(--e-glow),
+    inset 0 0 30px rgba(124, 123, 255, 0.12);
+}
+.rengine .re-core .tk {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rengine .re-core .mt {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--e-faint);
+  margin-top: 3px;
+}
+.rengine .re-core.draft { animation: re-coreglow 1.6s ease-in-out infinite; }
+.rengine .re-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 92px;
+}
+.rengine .re-disc {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #2a3050;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: grid;
+  place-items: center;
+  transition: 0.45s;
+}
+.rengine .re-disc svg { width: 9px; height: 9px; opacity: 0; transition: 0.3s; }
+.rengine .re-nm {
+  font-size: 10px;
+  color: var(--e-faint);
+  text-align: center;
+  line-height: 1.2;
+  transition: 0.45s;
+  font-weight: 500;
+}
+.rengine .re-fnd {
+  font-size: 9px;
+  color: var(--e-good);
+  opacity: 0;
+  transition: 0.4s;
+  font-variant-numeric: tabular-nums;
+}
+.rengine .re-node.run .re-disc {
+  background: var(--e-ink);
+  border-color: var(--e-ink2);
+  box-shadow: 0 0 0 6px var(--e-ink-soft), 0 0 18px var(--e-glow);
+  animation: re-soft 1.3s ease-in-out infinite;
+}
+.rengine .re-node.run .re-nm { color: var(--e-ink2); }
+.rengine .re-node.done .re-disc { background: var(--e-good); border-color: var(--e-good); box-shadow: 0 0 14px rgba(55, 211, 166, 0.4); }
+.rengine .re-node.done .re-disc svg { opacity: 1; }
+.rengine .re-node.done .re-nm { color: var(--e-text); }
+.rengine .re-node.done .re-fnd { opacity: 1; }
+.rengine .re-node.failed .re-disc { background: #b26b2e; border-color: #e6aa3c; }
+
+.rengine .re-feed { width: 300px; max-width: 38vw; }
+.rengine .re-feedhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--e-faint);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--e-line2);
+}
+.rengine .re-feedhead span { color: var(--e-ink2); font-weight: 600; letter-spacing: 0.01em; text-transform: none; }
+.rengine .re-feedlist {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  max-height: calc(var(--e-stage) - 20px);
+  overflow: hidden;
+}
+.rengine .re-item {
+  border-left: 2px solid var(--e-good);
+  padding-left: 12px;
+  animation: re-fadein 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.rengine .re-item .top { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em; }
+.rengine .re-item .top svg { width: 11px; height: 11px; color: var(--e-good); flex: 0 0 auto; }
+.rengine .re-item .n { margin-left: auto; font-size: 9.5px; color: var(--e-good); font-variant-numeric: tabular-nums; font-weight: 500; }
+.rengine .re-item .sum { font-size: 11px; color: var(--e-muted); line-height: 1.45; margin-top: 4px; }
+.rengine .re-item .src { font-size: 10px; color: var(--e-faint); font-family: var(--font-mono); margin-top: 5px; }
+.rengine .re-foot {
+  margin-top: 16px;
+  min-height: 18px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--e-faint);
+  font-family: var(--font-mono);
+}
+.rengine .re-foot b { color: var(--e-muted); font-weight: 600; }
+
+@keyframes re-soft { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@keyframes re-spin { to { transform: rotate(360deg); } }
+@keyframes re-fadein { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes re-coreglow {
+  0%, 100% { box-shadow: 0 0 60px -6px var(--e-glow), inset 0 0 30px rgba(124, 123, 255, 0.12); }
+  50% { box-shadow: 0 0 90px 0 var(--e-glow), inset 0 0 44px rgba(124, 123, 255, 0.22); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rengine .re-sweep::before, .rengine .re-node.run .re-disc,
+  .rengine .re-live, .rengine .re-core.draft { animation: none; }
+}
+@media (max-width: 760px) {
+  .rengine { --e-stage: min(80vmin, 380px); }
+  .rengine .re-wrap { flex-direction: column; gap: 20px; }
+  .rengine .re-feed { width: min(440px, 92vw); max-width: none; }
+  .rengine .re-feedlist { max-height: 190px; overflow-y: auto; }
+  .rengine .re-node { width: 76px; }
+}
