@@ -1,54 +1,54 @@
 @import "tailwindcss";
 
 @theme {
-  /* Neutral ramp — cool grayscale (Munshot dashboard tokens) */
-  --color-paper: #f9fafb;
-  --color-bg: #f9fafb;
-  --color-surface: #ffffff;
-  --color-surface-muted: #f9fafb;
-  --color-surface-sunken: #f3f4f6;
+  /* Dark premium ramp — matches the research-engine "world". The whole app
+     lives in this dark aesthetic now (the light Munshot tokens are retired). */
+  --color-paper: #0a0c13;
+  --color-bg: #0a0c13;
+  --color-surface: #141829;
+  --color-surface-muted: #10131f;
+  --color-surface-sunken: #0c0e18;
 
-  --color-border: #e5e7eb;
-  --color-border-strong: #d1d5db;
-  --color-border-ink: #111827;
+  --color-border: #232838;
+  --color-border-strong: #363c54;
+  --color-border-ink: #eaecf4;
 
-  --color-text: #111827;
-  --color-text-muted: #6b7280;
-  --color-text-subtle: #9ca3af;
-  --color-text-inverse: #ffffff;
+  --color-text: #eaecf4;
+  --color-text-muted: #9096ac;
+  --color-text-subtle: #626884;
+  --color-text-inverse: #0a0c13;
 
-  /* Primary — indigo (Munshot dashboard primary #4f46e5) */
-  --color-ink: #4f46e5;
-  --color-ink-hover: #4338ca;
-  --color-ink-soft: #eef2ff;
+  /* Primary — the engine's electric indigo (#7c7bff) */
+  --color-ink: #7c7bff;
+  --color-ink-hover: #6a68f5;
+  --color-ink-soft: #1b1e3a;
   --color-ink-foreground: #ffffff;
 
   /* Backwards-compatible alias so existing accent usage still resolves */
-  --color-accent: #4f46e5;
-  --color-accent-hover: #4338ca;
-  --color-accent-soft: #eef2ff;
+  --color-accent: #7c7bff;
+  --color-accent-hover: #6a68f5;
+  --color-accent-soft: #1b1e3a;
 
-  /* Signal colors — data-viz semantics, paired with the indigo chrome */
-  --color-signal-up: #16a34a;
-  --color-signal-up-soft: #dcfce7;
-  --color-signal-down: #dc2626;
-  --color-signal-down-soft: #fee2e2;
-  --color-signal-flat: #6b7280;
-  --color-signal-flat-soft: #f3f4f6;
+  /* Signal colors — data-viz semantics, tuned for the dark ground */
+  --color-signal-up: #37d3a6;
+  --color-signal-up-soft: #10241e;
+  --color-signal-down: #ff6b6b;
+  --color-signal-down-soft: #2a1519;
+  --color-signal-flat: #9096ac;
+  --color-signal-flat-soft: #171b29;
 
-  --color-warning: #d97706;
-  --color-warning-soft: #fef3c7;
-  --color-success: #16a34a;
-  --color-success-soft: #dcfce7;
+  --color-warning: #e6aa3c;
+  --color-warning-soft: #2a2113;
+  --color-success: #37d3a6;
+  --color-success-soft: #10241e;
 
-  /* Elevation */
-  --shadow-hairline: 0 0 0 1px rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.02);
+  /* Elevation — dark shadows lean on depth + a faint top hairline of light */
+  --shadow-hairline: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md:
-    0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.05);
+    0 2px 4px rgba(0, 0, 0, 0.4), 0 10px 28px -10px rgba(0, 0, 0, 0.6);
   --shadow-panel:
-    0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 24px 60px -34px #000;
 
   /* Radii */
   --radius-sm: 4px;
@@ -107,9 +107,9 @@ body {
 .shimmer {
   background-image: linear-gradient(
     90deg,
-    #e5e7eb 0%,
-    #f3f4f6 50%,
-    #e5e7eb 100%
+    #171b29 0%,
+    #232838 50%,
+    #171b29 100%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;

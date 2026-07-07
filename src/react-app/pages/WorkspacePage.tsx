@@ -153,13 +153,21 @@ export function WorkspacePage() {
       {/* ================= ACT 1 · INTAKE ================= */}
       {act === "intake" && (
         <div className="max-w-[680px] mx-auto space-y-5">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-ink)]">
-              Memo workbench
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-ink)]">
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-[var(--color-ink)]"
+                style={{ boxShadow: "0 0 8px var(--color-ink)" }}
+              />
+              Research engine
             </div>
-            <h1 className="text-[24px] font-semibold tracking-tight text-[var(--color-text)] mt-1 leading-tight">
+            <h1 className="text-[26px] font-semibold tracking-tight text-[var(--color-text)] mt-2 leading-tight">
               Drop the memo. The engine does the rest.
             </h1>
+            <p className="text-[13px] text-[var(--color-text-muted)] mt-2 leading-relaxed max-w-[520px] mx-auto">
+              Pick the company, upload the original memo, and one click runs a
+              full web-grounded research sweep — then drafts the follow-up.
+            </p>
           </div>
 
           <CompanySearch />

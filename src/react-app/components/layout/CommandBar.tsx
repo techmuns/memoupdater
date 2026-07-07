@@ -5,9 +5,10 @@ import { useMemoProject } from "../../state/MemoProjectContext";
 import { useSavedMemos } from "../../lib/useSavedMemos";
 import { deriveCommandBarValues } from "./commandBarState";
 
-// Munshot Zone 1: sticky 48px header. Left = product mark + title + active
-// ticker pill (shown ONLY when a company is selected). Right = stage indicator
-// + New Memo + Settings. No charts/tables/large descriptions live here.
+// Dark command strip: sticky 48px header that blends into the engine-world
+// ground (no separate white bar). Left = product mark + title + active ticker
+// pill (shown ONLY when a company is selected). Right = stage indicator +
+// New Memo + Settings. No charts/tables/large descriptions live here.
 export function CommandBar() {
   const navigate = useNavigate();
   const { state, startOver } = useMemoProject();
@@ -42,10 +43,10 @@ export function CommandBar() {
   const company = state.selectedCompany;
   const stageDotColor =
     stageTone === "success"
-      ? "#16a34a"
+      ? "#37d3a6"
       : stageTone === "warning"
-        ? "#d97706"
-        : "#9ca3af";
+        ? "#e6aa3c"
+        : "#626884";
 
   return (
     <header
@@ -58,10 +59,10 @@ export function CommandBar() {
         justifyContent: "space-between",
         padding: "0 24px",
         height: 48,
-        background: "rgba(255, 255, 255, 0.95)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        borderBottom: "1px solid #e5e7eb",
+        background: "rgba(10, 12, 19, 0.72)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
         flexShrink: 0,
       }}
     >
@@ -76,12 +77,14 @@ export function CommandBar() {
               width: 24,
               height: 24,
               borderRadius: 6,
-              background: "#4f46e5",
+              background:
+                "linear-gradient(135deg, #7c7bff 0%, #6a68f5 100%)",
               color: "#ffffff",
               display: "grid",
               placeItems: "center",
               fontSize: 12,
               fontWeight: 700,
+              boxShadow: "0 0 18px -4px rgba(124, 123, 255, 0.6)",
             }}
           >
             M
@@ -90,8 +93,9 @@ export function CommandBar() {
             style={{
               fontSize: 15,
               fontWeight: 700,
-              color: "#111827",
+              color: "#eaecf4",
               margin: 0,
+              letterSpacing: "-0.01em",
             }}
           >
             Memo Updater
@@ -109,7 +113,7 @@ export function CommandBar() {
             alignItems: "center",
             gap: 6,
             fontSize: 12,
-            color: "#6b7280",
+            color: "#9096ac",
           }}
         >
           <span
@@ -176,12 +180,12 @@ function TickerPill({ ticker, company }: { ticker: string; company?: string }) {
         alignItems: "center",
         gap: 6,
         padding: "2px 10px",
-        background: "#eef2ff",
-        color: "#4338ca",
+        background: "rgba(124, 123, 255, 0.14)",
+        color: "#b8b7ff",
         borderRadius: 99,
         fontSize: 12,
         fontWeight: 600,
-        border: "1px solid #e0e7ff",
+        border: "1px solid rgba(124, 123, 255, 0.28)",
         maxWidth: 260,
       }}
     >
@@ -189,8 +193,9 @@ function TickerPill({ ticker, company }: { ticker: string; company?: string }) {
         style={{
           width: 6,
           height: 6,
-          background: "#6366f1",
+          background: "#7c7bff",
           borderRadius: "50%",
+          boxShadow: "0 0 8px rgba(124, 123, 255, 0.7)",
           flexShrink: 0,
         }}
       />
@@ -198,7 +203,7 @@ function TickerPill({ ticker, company }: { ticker: string; company?: string }) {
       {company && (
         <span
           style={{
-            color: "#818cf8",
+            color: "#8f8ee0",
             fontWeight: 400,
             overflow: "hidden",
             textOverflow: "ellipsis",

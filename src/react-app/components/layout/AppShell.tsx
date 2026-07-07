@@ -5,10 +5,12 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-// Munshot 3-zone shell: sticky 48px header (CommandBar), a single scrollable
-// main (the ONLY scroll area), no footer. The shell fills the iframe with
-// height:100vh and never lets the page itself scroll. Content stays centered
-// and capped so it doesn't stretch awkwardly on wide monitors.
+// Dark "engine world" shell: a slim translucent command strip (CommandBar)
+// that blends into the same dark ground as the content below it — no separate
+// white top bar. A single scrollable main is the ONLY scroll area, no footer.
+// The shell fills the iframe with height:100vh and never lets the page itself
+// scroll. Content stays centered and capped so it doesn't stretch on wide
+// monitors. The ambient radial glows echo the research engine's backdrop.
 export function AppShell({ children }: AppShellProps) {
   return (
     <div
@@ -18,7 +20,9 @@ export function AppShell({ children }: AppShellProps) {
         height: "100vh",
         overflow: "hidden",
         background:
-          "linear-gradient(to bottom, rgba(249,250,251,0.8), #ffffff)",
+          "radial-gradient(120vmax 90vmax at 50% -30%, #141936 0%, transparent 55%)," +
+          "radial-gradient(80vmax 60vmax at 92% 118%, #0f1a2b 0%, transparent 52%)," +
+          "var(--color-bg)",
       }}
     >
       <CommandBar />
