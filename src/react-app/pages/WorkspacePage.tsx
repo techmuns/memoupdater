@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
-  ChevronDown,
   FileSearch,
   Loader2,
   RefreshCw,
@@ -15,10 +14,10 @@ import { ExtractionNotice } from "../components/ui/ExtractionNotice";
 import { CompanySearch } from "../components/CompanySearch";
 import { MemoReview } from "../components/MemoReview";
 import { ReportQnA } from "../components/ReportQnA";
-import { FullResearchReportCard } from "../components/FullResearchReportCard";
 import { ResearchEngine, type EnginePhase } from "../components/ResearchEngine";
 import { useMemoProject } from "../state/MemoProjectContext";
 import { saveMemo } from "../lib/savedMemos";
+import { downloadResearchPdf } from "../lib/researchPdf";
 
 // Three acts: Drop → Watch the engine work → Read & Ask. One click runs the
 // whole engine (research → draft); the animated engine carries "what's
@@ -67,6 +66,19 @@ export function WorkspacePage() {
   const researchWindowLabel = state.research
     ? `Research ${state.research.researchWindow.startIsoMonth} → ${state.research.researchWindow.endIsoMonth}`
     : undefined;
+
+  // Download the complete internal research report as a PDF (replaces the old
+  // on-dashboard long-report drawer).
+  const [downloadingReport, setDownloadingReport] = useState(false);
+  const handleDownloadResearch = async (): Promise<void> => {
+    if (state.fullReport.kind !== "success") return;
+    setDownloadingReport(true);
+    try {
+      await downloadResearchPdf(state.fullReport.report);
+    } finally {
+      setDownloadingReport(false);
+    }
+  };
 
   // ---- the one-click engine: run research, then auto-draft the memo --------
   const [armed, setArmed] = useState(false);
@@ -268,7 +280,7 @@ export function WorkspacePage() {
 
       {/* ================= ACT 2 · THE ENGINE ================= */}
       {act === "engine" && (
-        <div className="max-w-[860px] mx-auto">
+        <div className="max-w-[1120px] mx-auto">
           <ResearchEngine
             company={engineCore}
             sections={state.fullReportProgress}
@@ -284,11 +296,17 @@ export function WorkspacePage() {
 
       {/* ================= ACT 3 · READ & ASK ================= */}
       {act === "read" && memoSuccess && (
-        <div className="max-w-[760px] mx-auto space-y-5">
+        <div className="max-w-[1040px] mx-auto space-y-6">
           <MemoReview
             memo={memoSuccess.memo}
             generationType="openai"
             researchWindowLabel={researchWindowLabel}
+            onDownloadResearch={
+              state.fullReport.kind === "success"
+                ? handleDownloadResearch
+                : undefined
+            }
+            downloadingResearch={downloadingReport}
           />
 
           {state.fullReport.kind === "success" && (
@@ -296,21 +314,6 @@ export function WorkspacePage() {
               report={state.fullReport.report}
               memoContext={state.extraction?.text?.trim() || undefined}
             />
-          )}
-
-          {state.fullReport.kind === "success" && (
-            <details className="group rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-sm)]">
-              <summary className="flex items-center gap-2 px-5 py-3.5 cursor-pointer list-none select-none">
-                <FileSearch className="w-4 h-4 text-[var(--color-ink)]" />
-                <span className="text-[13px] font-semibold text-[var(--color-text)]">
-                  View the full research report
-                </span>
-                <ChevronDown className="w-4 h-4 ml-auto text-[var(--color-text-subtle)] transition-transform group-open:rotate-180" />
-              </summary>
-              <div className="px-3 pb-3">
-                <FullResearchReportCard report={state.fullReport.report} />
-              </div>
-            </details>
           )}
 
           <div className="flex justify-center pt-1">

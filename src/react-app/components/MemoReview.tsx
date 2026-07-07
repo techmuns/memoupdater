@@ -1,21 +1,9 @@
-import { useMemo, useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  Download,
-  FileText,
-  Layers,
-  Printer,
-} from "lucide-react";
-import type {
-  FollowUpMemo,
-  MemoConfidence,
-  MemoSection,
-} from "@shared/types";
+import { useMemo } from "react";
+import { Download, FileSearch, FileText, Loader2, Printer } from "lucide-react";
+import type { FollowUpMemo, MemoConfidence } from "@shared/types";
 import { humanSourceLabel } from "@shared/sanitizeMemo";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
-import { SIGNAL_BADGE_TONE, SIGNAL_LABEL } from "../lib/signalDisplay";
 import { buildMemoPdf, downloadMemoPdf } from "../lib/memoPdf";
 import { useMemoProject } from "../state/MemoProjectContext";
 
@@ -35,12 +23,18 @@ interface MemoReviewProps {
   memo: FollowUpMemo;
   generationType: "openai" | "demo";
   researchWindowLabel?: string;
+  // When provided, a "Download full research" action appears beside the memo
+  // downloads — the complete internal research report as a PDF.
+  onDownloadResearch?: () => void;
+  downloadingResearch?: boolean;
 }
 
 export function MemoReview({
   memo,
   generationType,
   researchWindowLabel,
+  onDownloadResearch,
+  downloadingResearch = false,
 }: MemoReviewProps) {
   const filenameStem = useMemo(() => buildFilenameStem(memo), [memo]);
 
@@ -124,8 +118,24 @@ export function MemoReview({
             onClick={downloadPdf}
             leadingIcon={<Download className="w-4 h-4" />}
           >
-            Download PDF
+            Download memo PDF
           </Button>
+          {onDownloadResearch && (
+            <Button
+              variant="secondary"
+              onClick={onDownloadResearch}
+              disabled={downloadingResearch}
+              leadingIcon={
+                downloadingResearch ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileSearch className="w-4 h-4" />
+                )
+              }
+            >
+              {downloadingResearch ? "Preparing…" : "Download full research"}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -146,143 +156,18 @@ export function MemoReview({
           The full {memo.sections.length}-section follow-up memo is ready —
           designed to fit under three pages. Use{" "}
           <span className="font-semibold text-[var(--color-text)]">
-            Download PDF
+            Download memo PDF
           </span>{" "}
-          (or Print) above to read it. Dashboard-only context — Priorities
-          answers and supplementary financial detail — is below.
+          (or Print) above to read it, or{" "}
+          <span className="font-semibold text-[var(--color-text)]">
+            Download full research
+          </span>{" "}
+          for the complete underlying report. Your priority questions are
+          answered below.
         </div>
       </section>
 
       <PrioritiesAnswerCard />
-
-      {memo.supplementaryPanels && memo.supplementaryPanels.length > 0 && (
-        <SupplementaryPanels panels={memo.supplementaryPanels} />
-      )}
-    </div>
-  );
-}
-
-// Phase 6B: supplementary panels render BELOW the memo as collapsible
-// drawers. They carry the deep valuation/EPS/financial math that would
-// push the printed memo over three pages.
-function SupplementaryPanels({ panels }: { panels: MemoSection[] }) {
-  return (
-    <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-sm)] px-6 sm:px-8 py-6">
-      <header className="flex items-baseline gap-2 mb-4">
-        <Layers className="w-4 h-4 text-[var(--color-text-muted)] translate-y-[2px]" />
-        <h3
-          className="text-[15px] font-semibold tracking-tight text-[var(--color-text)]"
-          style={{ fontFamily: "var(--font-serif)" }}
-        >
-          Supplementary detail
-        </h3>
-        <span className="text-[11px] text-[var(--color-text-muted)]">
-          Valuation · EPS bridge · memo-vs-actual financials — collapsed so the
-          memo above stays under three pages
-        </span>
-      </header>
-      <div className="space-y-2">
-        {panels.map((p) => (
-          <PanelDrawer key={p.id} panel={p} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PanelDrawer({ panel }: { panel: MemoSection }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)]">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-baseline gap-3 px-4 py-3 text-left"
-      >
-        <span className="w-4 inline-flex justify-center text-[var(--color-text-muted)] translate-y-[2px]">
-          {open ? (
-            <ChevronDown className="w-3.5 h-3.5" />
-          ) : (
-            <ChevronRight className="w-3.5 h-3.5" />
-          )}
-        </span>
-        <span
-          className="text-[14px] font-semibold tracking-tight text-[var(--color-text)] flex-1"
-          style={{ fontFamily: "var(--font-serif)" }}
-        >
-          {panel.title}
-        </span>
-        {panel.signal && (
-          <Badge tone={SIGNAL_BADGE_TONE[panel.signal]} dot>
-            {SIGNAL_LABEL[panel.signal]}
-          </Badge>
-        )}
-        {panel.confidence && (
-          <Badge tone={CONFIDENCE_TONE[panel.confidence]}>
-            {CONFIDENCE_LABEL[panel.confidence]}
-          </Badge>
-        )}
-      </button>
-      {open && (
-        <div className="px-4 pb-4 pt-1 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
-          {panel.summary && panel.summary !== panel.body && (
-            <p
-              className="text-[14px] text-[var(--color-text)] leading-[1.65] font-medium mt-3 mb-2"
-              style={{ fontFamily: "var(--font-serif)" }}
-            >
-              {panel.summary}
-            </p>
-          )}
-          {panel.bridge && panel.bridge.length > 0 && (
-            <BridgeTable rows={panel.bridge} />
-          )}
-          {panel.body && (
-            <p
-              className="text-[14px] text-[var(--color-text)] leading-[1.65] whitespace-pre-line mt-3"
-              style={{ fontFamily: "var(--font-serif)" }}
-            >
-              {panel.body}
-            </p>
-          )}
-          {panel.bullets && panel.bullets.length > 0 && (
-            <ul className="mt-3 space-y-1.5 list-disc pl-5">
-              {panel.bullets.map((b, bi) => (
-                <li
-                  key={bi}
-                  className="text-[13.5px] text-[var(--color-text)] leading-[1.6]"
-                  style={{ fontFamily: "var(--font-serif)" }}
-                >
-                  {b}
-                </li>
-              ))}
-            </ul>
-          )}
-          {panel.confidenceNote && (
-            <p className="mt-3 text-[11px] italic text-[var(--color-text-subtle)]">
-              {panel.confidenceNote}
-            </p>
-          )}
-          {panel.sources.length > 0 && (
-            <ul className="mt-3 space-y-1 border-l-2 border-[var(--color-border)] pl-3">
-              {panel.sources.map((src, i) => (
-                <li
-                  key={`${src.documentId}-${i}`}
-                  className="text-[11px] text-[var(--color-text-muted)] leading-snug inline-flex items-start gap-1.5"
-                >
-                  <FileText className="w-3 h-3 mt-0.5 shrink-0" />
-                  <span>
-                    <span className="font-medium text-[var(--color-text)]">
-                      {humanSourceLabel(src.documentId, i)}
-                    </span>
-                    {src.page && <> · p.{src.page}</>}
-                    {src.quote && <> — "{src.quote}"</>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -403,61 +288,6 @@ function PrioritiesAnswerCard() {
         </ol>
       )}
     </section>
-  );
-}
-
-
-function BridgeTable({
-  rows,
-}: {
-  rows: NonNullable<MemoSection["bridge"]>;
-}) {
-  return (
-    <div className="my-3 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)]">
-      <table className="w-full text-[13px] border-collapse">
-        <thead className="bg-[var(--color-surface-muted)]">
-          <tr className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">
-            <th className="text-left font-semibold px-3 py-2">Metric</th>
-            <th className="text-left font-semibold px-3 py-2">Original anchor</th>
-            <th className="text-left font-semibold px-3 py-2">Latest</th>
-            <th className="text-left font-semibold px-3 py-2">Read-through</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr
-              key={i}
-              className={i === 0 ? "" : "border-t border-[var(--color-border)]"}
-            >
-              <td
-                className="px-3 py-2 font-medium text-[var(--color-text)] align-top"
-                style={{ fontFamily: "var(--font-serif)" }}
-              >
-                {row.metric}
-              </td>
-              <td
-                className="px-3 py-2 text-[var(--color-text-muted)] align-top"
-                style={{ fontFamily: "var(--font-serif)" }}
-              >
-                {row.original || "—"}
-              </td>
-              <td
-                className="px-3 py-2 text-[var(--color-text)] align-top"
-                style={{ fontFamily: "var(--font-serif)" }}
-              >
-                {row.latest || "—"}
-              </td>
-              <td
-                className="px-3 py-2 text-[var(--color-text-muted)] italic align-top"
-                style={{ fontFamily: "var(--font-serif)" }}
-              >
-                {row.readThrough || "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }
 

@@ -1,12 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, FileText } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { MemoReview } from "../components/MemoReview";
-import { FullResearchReportCard } from "../components/FullResearchReportCard";
 import { ReportQnA } from "../components/ReportQnA";
 import { getSavedMemo } from "../lib/savedMemos";
+import { downloadResearchPdf } from "../lib/researchPdf";
 
 // Read-only view of a single saved memo, reached from the library at
 // /memo/:id. Renders the same MemoReview the workbench produces (so PDF
@@ -17,6 +17,18 @@ export function SavedMemoPage() {
     () => (id ? getSavedMemo(decodeURIComponent(id)) : null),
     [id],
   );
+
+  const [downloadingReport, setDownloadingReport] = useState(false);
+  const report = saved?.report;
+  const handleDownloadResearch = async (): Promise<void> => {
+    if (!report) return;
+    setDownloadingReport(true);
+    try {
+      await downloadResearchPdf(report);
+    } finally {
+      setDownloadingReport(false);
+    }
+  };
 
   const back = (
     <Link to="/library">
@@ -61,16 +73,14 @@ export function SavedMemoPage() {
         memo={saved.memo}
         generationType={saved.generationType}
         researchWindowLabel={saved.researchWindowLabel}
+        onDownloadResearch={saved.report ? handleDownloadResearch : undefined}
+        downloadingResearch={downloadingReport}
       />
 
-      {/* Stage 3: the stored report powers follow-up Q&A + a full re-read,
-          reusable across devices without re-running research. */}
-      {saved.report && (
-        <>
-          <ReportQnA report={saved.report} />
-          <FullResearchReportCard report={saved.report} />
-        </>
-      )}
+      {/* Stage 3: the stored report powers follow-up Q&A, reusable across
+          devices without re-running research. The full report itself is a
+          download (see the memo actions above), not an inline dump. */}
+      {saved.report && <ReportQnA report={saved.report} />}
     </div>
   );
 }

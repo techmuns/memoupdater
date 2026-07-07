@@ -93,6 +93,39 @@ body {
   z-index: 1;
 }
 
+/* Slim, buttonless scrollbars app-wide — no up/down arrow chrome, just a
+   subtle thumb that fits the dark ground. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-subtle);
+  background-clip: padding-box;
+}
+/* Kill the scrollbar's increment/decrement arrow buttons and the corner. */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Shimmer skeleton for widget loading states (Munshot UI standard — never a
    bare spinner). Apply `.shimmer` to placeholder blocks sized to the final
    widget shape. */
@@ -252,7 +285,7 @@ body {
   --e-glow: rgba(124, 123, 255, 0.55);
   --e-good: #37d3a6;
   --e-good-soft: rgba(55, 211, 166, 0.14);
-  --e-stage: min(64vmin, 460px);
+  --e-stage: min(68vmin, 520px);
   position: relative;
   border-radius: var(--radius-xl);
   overflow: hidden;
@@ -415,7 +448,7 @@ body {
 .rengine .re-node.done .re-fnd { opacity: 1; }
 .rengine .re-node.failed .re-disc { background: #b26b2e; border-color: #e6aa3c; }
 
-.rengine .re-feed { width: 300px; max-width: 38vw; }
+.rengine .re-feed { width: 340px; max-width: 40vw; }
 .rengine .re-feedhead {
   display: flex;
   align-items: center;
