@@ -13,6 +13,7 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Panel } from "../components/ui/Panel";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { MemoSyncSettings } from "../components/MemoSyncSettings";
 import { useLlmGateToken } from "../lib/llmGateToken";
 import { useMemoProject } from "../state/MemoProjectContext";
 
@@ -129,6 +130,8 @@ export function SettingsPage() {
         title="LLM configuration and readiness"
         description="Memo Updater v1 generates a same-style follow-up memo from an uploaded original memo, an OpenAI web_search research pass, and the deployed LLM. This page shows the server-side readiness. No secrets are returned to the browser."
       />
+
+      <MemoSyncSettings />
 
       <Panel
         eyebrow="LLM"

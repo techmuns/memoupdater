@@ -5,8 +5,10 @@ import {
   type SavedMemo,
 } from "./savedMemos";
 import {
+  getMemoSyncReason,
   getMemoSyncStatus,
   subscribeMemoSyncStatus,
+  type MemoSyncReason,
   type MemoSyncStatus,
 } from "./memoSync";
 
@@ -31,4 +33,19 @@ export function useMemoSyncStatus(): MemoSyncStatus {
     [],
   );
   return s;
+}
+
+// Reactive status + reason, so the UI can explain WHY sync is in its state.
+export function useMemoSync(): { status: MemoSyncStatus; reason: MemoSyncReason } {
+  const [v, setV] = useState<{ status: MemoSyncStatus; reason: MemoSyncReason }>(
+    () => ({ status: getMemoSyncStatus(), reason: getMemoSyncReason() }),
+  );
+  useEffect(
+    () =>
+      subscribeMemoSyncStatus(() =>
+        setV({ status: getMemoSyncStatus(), reason: getMemoSyncReason() }),
+      ),
+    [],
+  );
+  return v;
 }

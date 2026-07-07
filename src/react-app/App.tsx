@@ -7,17 +7,20 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { SavedMemoPage } from "./pages/SavedMemoPage";
 import { useMunshotHost } from "./state/MunshotHostContext";
 import { disableMemoSync, enableMemoSync } from "./lib/memoSync";
+import { useSyncId } from "./lib/syncId";
 
-// Turn on cross-device memo sync once the host tells us who the user is. The
-// id (falling back to email) scopes the server-side library; with no identity
-// (standalone / local dev) the library stays local-only.
+// Turn on cross-device memo sync. A manually-set sync id (Settings) wins so the
+// analyst can guarantee the SAME identity on every device; otherwise we use the
+// host-provided user id / email. With no identity anywhere, the library stays
+// local-only and the UI explains why.
 function useMemoLibrarySync(): void {
   const { host } = useMunshotHost();
-  const userId = host?.user?.id ?? host?.user?.email ?? null;
+  const manualId = useSyncId();
+  const identity = manualId || host?.user?.id || host?.user?.email || null;
   useEffect(() => {
-    if (userId) void enableMemoSync(userId);
-    else disableMemoSync();
-  }, [userId]);
+    if (identity) void enableMemoSync(identity);
+    else disableMemoSync("no_identity");
+  }, [identity]);
 }
 
 function App() {

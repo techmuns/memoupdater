@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { AlertCircle, Settings as SettingsIcon } from "lucide-react";
 import {
   ArrowRight,
   Cloud,
@@ -12,8 +13,9 @@ import { Button } from "../components/ui/Button";
 import { Panel } from "../components/ui/Panel";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/EmptyState";
-import { useMemoSyncStatus, useSavedMemos } from "../lib/useSavedMemos";
+import { useMemoSync, useSavedMemos } from "../lib/useSavedMemos";
 import { deleteSavedMemo, type SavedMemo } from "../lib/savedMemos";
+import type { MemoSyncReason } from "../lib/memoSync";
 import { useMemoProject } from "../state/MemoProjectContext";
 
 // Saved-memo library. Lists every follow-up memo the analyst has generated
@@ -21,7 +23,7 @@ import { useMemoProject } from "../state/MemoProjectContext";
 // clears the current project and returns to the workbench.
 export function LibraryPage() {
   const memos = useSavedMemos();
-  const syncStatus = useMemoSyncStatus();
+  const { status: syncStatus, reason: syncReason } = useMemoSync();
   const navigate = useNavigate();
   const { startOver } = useMemoProject();
 
@@ -56,6 +58,7 @@ export function LibraryPage() {
           </div>
         }
       >
+        {syncStatus !== "synced" && <SyncNote reason={syncReason} />}
         {memos.length === 0 ? (
           <EmptyState
             icon={<FileText className="w-7 h-7" />}
@@ -78,6 +81,48 @@ export function LibraryPage() {
           </ul>
         )}
       </Panel>
+    </div>
+  );
+}
+
+// Explains why the library isn't syncing and how to fix it — so "This device"
+// is never a silent mystery.
+function SyncNote({ reason }: { reason: MemoSyncReason }) {
+  const copy: Record<MemoSyncReason, { title: string; body: string } | null> = {
+    ok: null,
+    idle: null,
+    no_identity: {
+      title: "These memos are saved on this device only",
+      body: "To sync across your devices, set a sync ID (e.g. your email) in Settings — use the same ID on every device and your library follows you. Without it, memos live only in this browser and can be lost if its storage is cleared.",
+    },
+    server_unavailable: {
+      title: "Cross-device sync isn't available yet",
+      body: "A sync ID is set, but the server storage isn't reachable — the worker likely needs to be deployed with the memo KV namespace. Once it's deployed, your memos will sync automatically.",
+    },
+    offline: {
+      title: "Couldn't reach the sync server",
+      body: "Working from this device's local copy for now. Reload to retry — your memos will sync once the connection is back.",
+    },
+  };
+  const c = copy[reason];
+  if (!c) return null;
+  return (
+    <div className="mb-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3 flex items-start gap-3">
+      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[12.5px] font-semibold text-[var(--color-text)]">
+          {c.title}
+        </div>
+        <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed">
+          {c.body}
+        </p>
+        <Link
+          to="/settings"
+          className="inline-flex items-center gap-1 mt-2 text-[12px] font-semibold text-[var(--color-ink)] hover:underline"
+        >
+          <SettingsIcon className="w-3.5 h-3.5" /> Open sync settings
+        </Link>
+      </div>
     </div>
   );
 }

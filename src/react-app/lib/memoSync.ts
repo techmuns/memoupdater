@@ -17,18 +17,33 @@ import {
 
 export type MemoSyncStatus = "local" | "synced";
 
+// Why sync is in its current state — drives the UI's plain-English explanation
+// so "THIS DEVICE" is never a silent mystery.
+export type MemoSyncReason =
+  | "ok" // synced to the server
+  | "no_identity" // no sync id set and the host provided none
+  | "server_unavailable" // reached the server but KV isn't configured/deployed
+  | "offline" // couldn't reach the server (will retry on reload)
+  | "idle"; // nothing to sync yet
+
 let currentUserId: string | null = null;
 let status: MemoSyncStatus = "local";
+let reason: MemoSyncReason = "idle";
 const statusListeners = new Set<() => void>();
 
-function setStatus(next: MemoSyncStatus): void {
-  if (status === next) return;
+function emit(next: MemoSyncStatus, nextReason: MemoSyncReason): void {
+  const changed = status !== next || reason !== nextReason;
   status = next;
-  statusListeners.forEach((l) => l());
+  reason = nextReason;
+  if (changed) statusListeners.forEach((l) => l());
 }
 
 export function getMemoSyncStatus(): MemoSyncStatus {
   return status;
+}
+
+export function getMemoSyncReason(): MemoSyncReason {
+  return reason;
 }
 
 export function subscribeMemoSyncStatus(cb: () => void): () => void {
@@ -36,9 +51,9 @@ export function subscribeMemoSyncStatus(cb: () => void): () => void {
   return () => statusListeners.delete(cb);
 }
 
-// Turn on sync for a host user. Idempotent for the same id. Wires the local
-// store's remote sink (so future saves/deletes push to the server) and runs a
-// one-time reconcile.
+// Turn on sync for a given identity (host user id, or a manual sync id the user
+// entered in Settings). Idempotent for the same id. Wires the local store's
+// remote sink (so future saves/deletes push to the server) and reconciles.
 export async function enableMemoSync(userId: string): Promise<void> {
   if (currentUserId === userId) return;
   currentUserId = userId;
@@ -53,10 +68,10 @@ export async function enableMemoSync(userId: string): Promise<void> {
   await reconcile();
 }
 
-export function disableMemoSync(): void {
+export function disableMemoSync(reasonWhy: MemoSyncReason = "no_identity"): void {
   currentUserId = null;
   setRemoteSink(null);
-  setStatus("local");
+  emit("local", reasonWhy);
 }
 
 // Merge local and server libraries once, then make the server canonical.
@@ -70,14 +85,16 @@ async function reconcile(): Promise<void> {
   try {
     remote = await api.memosList(userId);
   } catch {
-    // Offline or server error — keep the local cache and stay "local". A later
-    // save will retry the push; a reload will retry the pull.
+    // Couldn't reach the server — keep the local cache. A save retries the
+    // push; a reload retries the pull.
+    emit("local", "offline");
     return;
   }
 
   if (!remote.synced) {
-    // Server has no KV binding configured — fall back to local-only.
-    disableMemoSync();
+    // Reached the server but KV isn't configured/deployed. Stay local, but keep
+    // the identity wired so a later reconcile (after deploy) can succeed.
+    emit("local", "server_unavailable");
     return;
   }
 
@@ -92,5 +109,5 @@ async function reconcile(): Promise<void> {
 
   // Server set + freshly-uploaded local-only = the reconciled library.
   replaceAllSavedMemos([...remoteList, ...localOnly]);
-  setStatus("synced");
+  emit("synced", "ok");
 }
