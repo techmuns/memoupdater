@@ -491,7 +491,29 @@ body {
   flex-direction: column;
   gap: 13px;
   max-height: calc(var(--e-stage) - 20px);
-  overflow: hidden;
+  /* Scroll the findings on their own — all 9 stream in here, and only this
+     list scrolls (the dashboard behind it stays put). */
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+/* A slimmer, self-contained scrollbar just for the findings feed. */
+.rengine .re-feedlist::-webkit-scrollbar {
+  width: 6px;
+}
+.rengine .re-feedlist::-webkit-scrollbar-track {
+  background: transparent;
+}
+.rengine .re-feedlist::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border: 0;
+  border-radius: 999px;
+  background-clip: border-box;
+}
+.rengine .re-feedlist::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
 }
 .rengine .re-item {
   border-left: 2px solid var(--e-good);

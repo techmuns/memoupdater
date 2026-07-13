@@ -278,9 +278,15 @@ export function WorkspacePage() {
         </div>
       )}
 
-      {/* ================= ACT 2 · THE ENGINE ================= */}
+      {/* ================= ACT 2 · THE ENGINE =================
+          The engine fills the viewport exactly (command bar 48px + main's
+          56px vertical padding = 104px) and never scrolls the page — only the
+          live-findings feed inside it scrolls. */}
       {act === "engine" && (
-        <div className="max-w-[1120px] mx-auto">
+        <div
+          className="flex flex-col items-center justify-center overflow-hidden mx-auto w-full max-w-[1120px]"
+          style={{ height: "calc(100vh - 104px)" }}
+        >
           <ResearchEngine
             company={engineCore}
             sections={state.fullReportProgress}
