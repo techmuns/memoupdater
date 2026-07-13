@@ -58,7 +58,7 @@ export function Markdown({ text, className }: MarkdownProps) {
                   {r.map((cell, ci) => (
                     <td
                       key={ci}
-                      className="px-2.5 py-1.5 text-[var(--color-text-muted)] align-top"
+                      className="px-2.5 py-1.5 text-[var(--color-text)] align-top"
                     >
                       <Inline text={cell} />
                     </td>
@@ -101,7 +101,7 @@ export function Markdown({ text, className }: MarkdownProps) {
       blocks.push(
         <ListTag
           key={key++}
-          className={`my-2 space-y-1 ${ordered ? "list-decimal" : "list-disc"} pl-5 text-[13px] text-[var(--color-text-muted)] leading-relaxed`}
+          className={`my-2 space-y-1 ${ordered ? "list-decimal" : "list-disc"} pl-5 text-[13px] text-[var(--color-text)] leading-relaxed marker:text-[var(--color-text-subtle)]`}
         >
           {items.map((it, ii) => (
             <li key={ii}>
@@ -129,7 +129,7 @@ export function Markdown({ text, className }: MarkdownProps) {
     blocks.push(
       <p
         key={key++}
-        className="my-2 text-[13px] text-[var(--color-text-muted)] leading-relaxed"
+        className="my-2 text-[13px] text-[var(--color-text)] leading-relaxed"
       >
         <Inline text={para.join(" ")} />
       </p>,
@@ -139,10 +139,12 @@ export function Markdown({ text, className }: MarkdownProps) {
   return <div className={className}>{blocks}</div>;
 }
 
-// Inline formatting: **bold** and `code`. Everything else is literal text.
+// Inline formatting: **bold** (highlighter-marked), *italic*, and `code`.
+// Everything else is literal text. Bold matches before italic so a `**x**` run
+// is never mis-parsed as two italics.
 function Inline({ text }: { text: string }) {
   const parts: ReactNode[] = [];
-  const re = /(\*\*([^*]+)\*\*|`([^`]+)`)/g;
+  const re = /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let key = 0;
@@ -150,17 +152,26 @@ function Inline({ text }: { text: string }) {
     if (m.index > last) parts.push(<Fragment key={key++}>{text.slice(last, m.index)}</Fragment>);
     if (m[2] !== undefined) {
       parts.push(
-        <strong key={key++} className="font-semibold text-[var(--color-text)]">
+        <strong
+          key={key++}
+          className="mark-hl font-semibold text-[var(--color-text)]"
+        >
           {m[2]}
         </strong>,
       );
     } else if (m[3] !== undefined) {
       parts.push(
+        <em key={key++} className="italic text-[var(--color-text)]">
+          {m[3]}
+        </em>,
+      );
+    } else if (m[4] !== undefined) {
+      parts.push(
         <code
           key={key++}
-          className="px-1 py-0.5 rounded bg-[var(--color-surface-muted)] text-[12px] font-mono"
+          className="px-1 py-0.5 rounded bg-[var(--color-surface-sunken)] text-[12px] font-mono text-[var(--color-text)]"
         >
-          {m[3]}
+          {m[4]}
         </code>,
       );
     }

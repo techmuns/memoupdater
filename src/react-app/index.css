@@ -13,10 +13,17 @@
   --color-border-strong: #363c54;
   --color-border-ink: #eaecf4;
 
-  --color-text: #eaecf4;
-  --color-text-muted: #9096ac;
-  --color-text-subtle: #626884;
+  /* Text ramp — brightened for strong contrast on the dark ground. Muted and
+     subtle were raised (#9096ac→#c2c7da, #626884→#8f95af) so secondary text
+     and labels stay readable everywhere, not just the primary text. */
+  --color-text: #f1f3f9;
+  --color-text-muted: #c2c7da;
+  --color-text-subtle: #8f95af;
   --color-text-inverse: #0a0c13;
+
+  /* Highlighter marker tint — a translucent indigo band drawn behind emphasis
+     (see .mark-hl). Reads like a real highlighter without hurting contrast. */
+  --color-mark: color-mix(in srgb, #7c7bff 34%, transparent);
 
   /* Primary — the engine's electric indigo (#7c7bff) */
   --color-ink: #7c7bff;
@@ -162,6 +169,22 @@ body {
 
 .serif {
   font-family: var(--font-serif);
+}
+
+/* Highlighter marker for emphasized text — a soft indigo band swiped across
+   the lower two-thirds of the glyphs (like a real highlighter), so key phrases
+   and figures pop without a boxy background or a contrast hit. */
+.mark-hl {
+  background-image: linear-gradient(
+    to top,
+    var(--color-mark) 0%,
+    var(--color-mark) 42%,
+    transparent 42%
+  );
+  border-radius: 2px;
+  padding: 0 1.5px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 /* Hairline divider used between sections of the memo reader */

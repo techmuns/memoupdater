@@ -46,7 +46,7 @@ export function CommandBar() {
       ? "#37d3a6"
       : stageTone === "warning"
         ? "#e6aa3c"
-        : "#626884";
+        : "#8f95af";
 
   return (
     <header
@@ -113,7 +113,7 @@ export function CommandBar() {
             alignItems: "center",
             gap: 6,
             fontSize: 12,
-            color: "#9096ac",
+            color: "#c2c7da",
           }}
         >
           <span
