@@ -624,3 +624,66 @@ body {
   .rengine .re-feedlist { max-height: 190px; overflow-y: auto; }
   .rengine .re-node { width: 76px; }
 }
+
+/* ===== Light-theme engine =================================================
+   In light mode the radar re-skins to a light "console" so the whole page is
+   light (no dark card floating on a white shell). Overrides the self-contained
+   --e-* vars plus the few elements that hardcode dark/white values. */
+:root[data-theme="light"] .rengine {
+  --e-line: rgba(15, 23, 42, 0.12);
+  --e-line2: rgba(15, 23, 42, 0.07);
+  --e-text: #1e2233;
+  --e-muted: #4a5163;
+  --e-faint: #737a8f;
+  --e-ink: #4f46e5;
+  --e-ink2: #6a68f5;
+  --e-ink-soft: rgba(79, 70, 229, 0.14);
+  --e-glow: rgba(79, 70, 229, 0.32);
+  --e-good: #12805a;
+  --e-good-soft: rgba(18, 128, 90, 0.12);
+  background:
+    radial-gradient(120vmax 90vmax at 50% -20%, #edefff 0%, transparent 55%),
+    radial-gradient(80vmax 60vmax at 90% 120%, #e9f1ff 0%, transparent 50%),
+    #ffffff;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 20px 50px -30px rgba(15, 23, 42, 0.25),
+    inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+}
+:root[data-theme="light"] .rengine .re-disc {
+  background: #e4e7f1;
+  border-color: rgba(15, 23, 42, 0.16);
+}
+:root[data-theme="light"] .rengine .re-core {
+  background: radial-gradient(
+    circle at 50% 40%,
+    rgba(79, 70, 229, 0.16),
+    rgba(79, 70, 229, 0.04) 70%
+  );
+  border-color: rgba(79, 70, 229, 0.32);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.05),
+    0 0 46px -8px rgba(79, 70, 229, 0.32),
+    inset 0 0 26px rgba(79, 70, 229, 0.08);
+}
+:root[data-theme="light"] .rengine .re-sweep::before {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 300deg,
+    rgba(79, 70, 229, 0.1) 350deg,
+    rgba(79, 70, 229, 0.24) 360deg
+  );
+}
+:root[data-theme="light"] .rengine .re-node.done .re-disc {
+  box-shadow: 0 0 12px rgba(18, 128, 90, 0.35);
+}
+:root[data-theme="light"] .rengine .re-feedlist {
+  scrollbar-color: rgba(15, 23, 42, 0.24) transparent;
+}
+:root[data-theme="light"] .rengine .re-feedlist::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.24);
+}
+:root[data-theme="light"] .rengine .re-feedlist::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.36);
+}

@@ -112,7 +112,7 @@ export function MemoReview({
           </div>
           <h2
             className="text-[22px] font-semibold tracking-tight text-[var(--color-text)] mt-1"
-            style={{ fontFamily: "var(--font-serif)" }}
+            style={{ fontFamily: "var(--font-sans)" }}
           >
             {memo.title}
           </h2>
@@ -204,7 +204,7 @@ function MemoSectionBlock({
         </span>
         <h3
           className="text-[16px] font-semibold tracking-tight text-[var(--color-text)] flex-1 min-w-0"
-          style={{ fontFamily: "var(--font-serif)" }}
+          style={{ fontFamily: "var(--font-sans)" }}
         >
           {section.title}
         </h3>
@@ -218,7 +218,7 @@ function MemoSectionBlock({
       {section.summary && section.summary !== section.body && (
         <p
           className="text-[14px] text-[var(--color-text)] leading-[1.65] font-medium mb-3"
-          style={{ fontFamily: "var(--font-serif)" }}
+          style={{ fontFamily: "var(--font-sans)" }}
         >
           {section.summary}
         </p>
@@ -231,7 +231,7 @@ function MemoSectionBlock({
       {section.body && (
         <p
           className="text-[14px] text-[var(--color-text)] leading-[1.65] whitespace-pre-line"
-          style={{ fontFamily: "var(--font-serif)" }}
+          style={{ fontFamily: "var(--font-sans)" }}
         >
           {section.body}
         </p>
@@ -243,7 +243,7 @@ function MemoSectionBlock({
             <li
               key={bi}
               className="text-[13.5px] text-[var(--color-text)] leading-[1.6]"
-              style={{ fontFamily: "var(--font-serif)" }}
+              style={{ fontFamily: "var(--font-sans)" }}
             >
               {b}
             </li>
@@ -278,25 +278,25 @@ function BridgeTable({
             >
               <td
                 className="px-3 py-2 font-medium text-[var(--color-text)] align-top"
-                style={{ fontFamily: "var(--font-serif)" }}
+                style={{ fontFamily: "var(--font-sans)" }}
               >
                 {row.metric}
               </td>
               <td
                 className="px-3 py-2 text-[var(--color-text)] align-top"
-                style={{ fontFamily: "var(--font-serif)" }}
+                style={{ fontFamily: "var(--font-sans)" }}
               >
                 {row.original || "—"}
               </td>
               <td
                 className="px-3 py-2 text-[var(--color-text)] align-top"
-                style={{ fontFamily: "var(--font-serif)" }}
+                style={{ fontFamily: "var(--font-sans)" }}
               >
                 {row.latest || "—"}
               </td>
               <td
                 className="px-3 py-2 text-[var(--color-text)] italic align-top"
-                style={{ fontFamily: "var(--font-serif)" }}
+                style={{ fontFamily: "var(--font-sans)" }}
               >
                 {row.readThrough || "—"}
               </td>
@@ -324,7 +324,7 @@ function PrioritiesAnswerCard() {
       <header className="flex items-baseline gap-2 mb-4">
         <h3
           className="text-[15px] font-semibold tracking-tight text-[var(--color-text)]"
-          style={{ fontFamily: "var(--font-serif)" }}
+          style={{ fontFamily: "var(--font-sans)" }}
         >
           Your priorities — answered
         </h3>
@@ -378,13 +378,13 @@ function PrioritiesAnswerCard() {
               <div className="flex items-baseline gap-3 mb-1">
                 <span
                   className="tnum text-[13px] font-semibold text-[var(--color-text-muted)] leading-none"
-                  style={{ fontFamily: "var(--font-serif)" }}
+                  style={{ fontFamily: "var(--font-sans)" }}
                 >
                   Q{i + 1}
                 </span>
                 <p
                   className="text-[13.5px] font-semibold text-[var(--color-text)] leading-snug"
-                  style={{ fontFamily: "var(--font-serif)" }}
+                  style={{ fontFamily: "var(--font-sans)" }}
                 >
                   {it.question}
                 </p>
@@ -396,7 +396,7 @@ function PrioritiesAnswerCard() {
               </div>
               <p
                 className="text-[13.5px] text-[var(--color-text)] leading-[1.6] mt-1"
-                style={{ fontFamily: "var(--font-serif)" }}
+                style={{ fontFamily: "var(--font-sans)" }}
               >
                 {it.answer}
               </p>
