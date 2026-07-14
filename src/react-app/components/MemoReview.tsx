@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import { Download, FileSearch, FileText, Loader2, Printer } from "lucide-react";
-import type { FollowUpMemo, MemoConfidence } from "@shared/types";
+import type { FollowUpMemo, MemoConfidence, MemoSection } from "@shared/types";
 import { humanSourceLabel } from "@shared/sanitizeMemo";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
+import { SIGNAL_BADGE_TONE, SIGNAL_LABEL } from "../lib/signalDisplay";
 import { buildMemoPdf, downloadMemoPdf } from "../lib/memoPdf";
 import { useMemoProject } from "../state/MemoProjectContext";
 
@@ -27,6 +28,9 @@ interface MemoReviewProps {
   // downloads — the complete internal research report as a PDF.
   onDownloadResearch?: () => void;
   downloadingResearch?: boolean;
+  // Render the full follow-up memo body inline (the dashboard read view). When
+  // false, only the header + a short "downloads" strip show.
+  showBody?: boolean;
 }
 
 export function MemoReview({
@@ -35,6 +39,7 @@ export function MemoReview({
   researchWindowLabel,
   onDownloadResearch,
   downloadingResearch = false,
+  showBody = false,
 }: MemoReviewProps) {
   const filenameStem = useMemo(() => buildFilenameStem(memo), [memo]);
 
@@ -147,27 +152,189 @@ export function MemoReview({
         </div>
       </header>
 
-      {/* The full memo body intentionally does NOT render on the dashboard.
-          The client always reads the polished memo via Download PDF / Print;
-          the dashboard surfaces the dashboard-only Priorities Q&A and the
-          supplementary detail below. */}
-      <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-sm)] px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="text-[12.5px] text-[var(--color-text-muted)] leading-snug">
-          The full {memo.sections.length}-section follow-up memo is ready —
-          designed to fit under three pages. Use{" "}
-          <span className="font-semibold text-[var(--color-text)]">
-            Download memo PDF
-          </span>{" "}
-          (or Print) above to read it, or{" "}
-          <span className="font-semibold text-[var(--color-text)]">
-            Download full research
-          </span>{" "}
-          for the complete underlying report. Your priority questions are
-          answered below.
-        </div>
-      </section>
+      {showBody ? (
+        <MemoBody memo={memo} />
+      ) : (
+        <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-sm)] px-5 py-4">
+          <div className="text-[12.5px] text-[var(--color-text-muted)] leading-snug">
+            The full {memo.sections.length}-section follow-up memo is ready —
+            designed to fit under three pages. Use{" "}
+            <span className="font-semibold text-[var(--color-text)]">
+              Download memo PDF
+            </span>{" "}
+            (or Print) above to read it, or{" "}
+            <span className="font-semibold text-[var(--color-text)]">
+              Download full research
+            </span>{" "}
+            for the complete underlying report.
+          </div>
+        </section>
+      )}
 
       <PrioritiesAnswerCard />
+    </div>
+  );
+}
+
+// The full follow-up memo, rendered for on-dashboard reading. Mirrors the PDF's
+// content: numbered sections with a signal + confidence tag, the summary lead,
+// the memo-vs-actual bridge, body prose, key-point bullets, and sources.
+function MemoBody({ memo }: { memo: FollowUpMemo }) {
+  return (
+    <article className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-sm)] px-6 sm:px-8 py-6 space-y-6">
+      {memo.sections.map((section, i) => (
+        <MemoSectionBlock key={section.id} section={section} index={i + 1} />
+      ))}
+    </article>
+  );
+}
+
+function MemoSectionBlock({
+  section,
+  index,
+}: {
+  section: MemoSection;
+  index: number;
+}) {
+  return (
+    <section className="scroll-mt-4">
+      <div className="flex items-baseline gap-3 border-b border-[var(--color-border)] pb-2 mb-3">
+        <span className="tnum text-[12px] font-semibold text-[var(--color-text-subtle)] leading-none">
+          {String(index).padStart(2, "0")}
+        </span>
+        <h3
+          className="text-[16px] font-semibold tracking-tight text-[var(--color-text)] flex-1 min-w-0"
+          style={{ fontFamily: "var(--font-serif)" }}
+        >
+          {section.title}
+        </h3>
+        {section.signal && (
+          <Badge tone={SIGNAL_BADGE_TONE[section.signal]} dot>
+            {SIGNAL_LABEL[section.signal]}
+          </Badge>
+        )}
+        {section.confidence && (
+          <Badge tone={CONFIDENCE_TONE[section.confidence]}>
+            {CONFIDENCE_LABEL[section.confidence]}
+          </Badge>
+        )}
+      </div>
+
+      {section.summary && section.summary !== section.body && (
+        <p
+          className="text-[14px] text-[var(--color-text)] leading-[1.65] font-medium mb-3"
+          style={{ fontFamily: "var(--font-serif)" }}
+        >
+          {section.summary}
+        </p>
+      )}
+
+      {section.bridge && section.bridge.length > 0 && (
+        <BridgeTable rows={section.bridge} />
+      )}
+
+      {section.body && (
+        <p
+          className="text-[14px] text-[var(--color-text)] leading-[1.65] whitespace-pre-line"
+          style={{ fontFamily: "var(--font-serif)" }}
+        >
+          {section.body}
+        </p>
+      )}
+
+      {section.bullets && section.bullets.length > 0 && (
+        <ul className="mt-3 space-y-1.5 list-disc pl-5 marker:text-[var(--color-text-subtle)]">
+          {section.bullets.map((b, bi) => (
+            <li
+              key={bi}
+              className="text-[13.5px] text-[var(--color-text)] leading-[1.6]"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              {b}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {section.confidenceNote && (
+        <p className="mt-3 text-[11.5px] italic text-[var(--color-text-subtle)]">
+          {section.confidenceNote}
+        </p>
+      )}
+
+      {section.sources.length > 0 && (
+        <ul className="mt-3 space-y-1 border-l-2 border-[var(--color-border)] pl-3">
+          {section.sources.map((src, i) => (
+            <li
+              key={`${src.documentId}-${i}`}
+              className="text-[11px] text-[var(--color-text-muted)] leading-snug inline-flex items-start gap-1.5"
+            >
+              <FileText className="w-3 h-3 mt-0.5 shrink-0" />
+              <span>
+                <span className="font-medium text-[var(--color-text)]">
+                  {humanSourceLabel(src.documentId, i)}
+                </span>
+                {src.page && <> · p.{src.page}</>}
+                {src.quote && <> — "{src.quote}"</>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function BridgeTable({
+  rows,
+}: {
+  rows: NonNullable<MemoSection["bridge"]>;
+}) {
+  return (
+    <div className="my-3 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)]">
+      <table className="w-full text-[13px] border-collapse">
+        <thead className="bg-[var(--color-surface-muted)]">
+          <tr className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">
+            <th className="text-left font-semibold px-3 py-2">Metric</th>
+            <th className="text-left font-semibold px-3 py-2">Original anchor</th>
+            <th className="text-left font-semibold px-3 py-2">Latest</th>
+            <th className="text-left font-semibold px-3 py-2">Read-through</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr
+              key={i}
+              className={i === 0 ? "" : "border-t border-[var(--color-border)]"}
+            >
+              <td
+                className="px-3 py-2 font-medium text-[var(--color-text)] align-top"
+                style={{ fontFamily: "var(--font-serif)" }}
+              >
+                {row.metric}
+              </td>
+              <td
+                className="px-3 py-2 text-[var(--color-text-muted)] align-top"
+                style={{ fontFamily: "var(--font-serif)" }}
+              >
+                {row.original || "—"}
+              </td>
+              <td
+                className="px-3 py-2 text-[var(--color-text)] align-top"
+                style={{ fontFamily: "var(--font-serif)" }}
+              >
+                {row.latest || "—"}
+              </td>
+              <td
+                className="px-3 py-2 text-[var(--color-text-muted)] italic align-top"
+                style={{ fontFamily: "var(--font-serif)" }}
+              >
+                {row.readThrough || "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

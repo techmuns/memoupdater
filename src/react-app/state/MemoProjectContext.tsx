@@ -135,6 +135,10 @@ interface State {
   // the deployed worker's (a stale tab). Drives a reload banner so the
   // user never hits cryptic "stale_client" 400s mid-generation.
   staleClient: boolean;
+  // The one-click "engine" run is armed: research → auto-draft the memo.
+  // Kept in context (not page-local) so navigating away and back never loses
+  // the running workflow or drops the research→draft handoff.
+  engineArmed: boolean;
 }
 
 type Action =
@@ -150,6 +154,7 @@ type Action =
       coverage: MemoCoverageSignals;
     }
   | { type: "SET_PERIOD_OVERRIDE"; override: PeriodOverride }
+  | { type: "SET_ENGINE_ARMED"; value: boolean }
   | { type: "SET_RESEARCH_STATE"; state: ResearchGenerationState }
   | { type: "SET_RESEARCH"; research: ResearchFindings | null }
   | {
@@ -282,6 +287,7 @@ const initialState: State = {
   skipUnderstanding: false,
   userResearchPriorities: "",
   staleClient: false,
+  engineArmed: false,
 };
 
 function reducer(state: State, action: Action): State {
@@ -301,7 +307,11 @@ function reducer(state: State, action: Action): State {
     case "CLEAR_SELECTED_COMPANY":
       return { ...state, selectedCompany: null };
     case "SET_INITIAL_FILE":
-      return { ...state, initialFile: action.file };
+      // A new/replaced file disarms the engine so a stale armed flag can't
+      // auto-draft against the previous memo.
+      return { ...state, initialFile: action.file, engineArmed: false };
+    case "SET_ENGINE_ARMED":
+      return { ...state, engineArmed: action.value };
     case "SET_EXTRACTION_STATUS":
       return { ...state, extractionStatus: action.status };
     case "SET_EXTRACTION":
@@ -671,6 +681,7 @@ interface MemoProjectContextValue {
   retryFailedResearchPasses: () => Promise<void>;
   retryAllResearch: () => Promise<void>;
   generateFullResearchReport: () => Promise<void>;
+  runEngine: () => void;
   generateMemo: (withResearch: boolean) => Promise<void>;
   retryFailedSection: () => Promise<void>;
   retryFullMemo: () => Promise<void>;
@@ -693,6 +704,10 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
   const generateAbort = useRef<AbortController | null>(null);
   const understandAbort = useRef<AbortController | null>(null);
   const reportAbort = useRef<AbortController | null>(null);
+  // Guards the one-shot research→draft handoff so the auto-chain effect fires
+  // generateMemo exactly once per armed run (survives navigation because the
+  // provider never unmounts).
+  const engineChainFired = useRef(false);
 
   useEffect(() => {
     api
@@ -1316,6 +1331,36 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     return runOrchestratedGeneration(Boolean(state.research), "fresh");
   }, [runOrchestratedGeneration, state.research]);
 
+  // The one-click engine: arm the run and kick off comprehensive research; the
+  // auto-chain effect below drafts the memo the moment research succeeds. Lives
+  // in the provider so the workflow keeps running (and finishes the handoff)
+  // even while the user is on another screen.
+  const runEngine = useCallback((): void => {
+    engineChainFired.current = false;
+    dispatch({ type: "SET_ENGINE_ARMED", value: true });
+    if (state.researchState.kind === "success") {
+      engineChainFired.current = true;
+      void generateMemo(true);
+      return;
+    }
+    void generateFullResearchReport();
+  }, [state.researchState.kind, generateMemo, generateFullResearchReport]);
+
+  // When research succeeds under an armed run, auto-start the memo draft once.
+  const researchStateKind = state.researchState.kind;
+  const llmKind = state.llm.kind;
+  useEffect(() => {
+    if (
+      state.engineArmed &&
+      researchStateKind === "success" &&
+      llmKind === "idle" &&
+      !engineChainFired.current
+    ) {
+      engineChainFired.current = true;
+      void generateMemo(true);
+    }
+  }, [state.engineArmed, researchStateKind, llmKind, generateMemo]);
+
   const startOver = useCallback(() => {
     researchAbort.current?.abort();
     generateAbort.current?.abort();
@@ -1323,6 +1368,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     researchAbort.current = null;
     generateAbort.current = null;
     reportAbort.current = null;
+    engineChainFired.current = false;
     dispatch({ type: "RESET" });
   }, []);
 
@@ -1355,6 +1401,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
       retryFailedResearchPasses,
       retryAllResearch,
       generateFullResearchReport,
+      runEngine,
       generateMemo,
       retryFailedSection,
       retryFullMemo,
@@ -1376,6 +1423,7 @@ export function MemoProjectProvider({ children }: { children: ReactNode }) {
     retryFailedResearchPasses,
     retryAllResearch,
     generateFullResearchReport,
+    runEngine,
     generateMemo,
     retryFailedSection,
     retryFullMemo,

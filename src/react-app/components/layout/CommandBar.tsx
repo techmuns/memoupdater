@@ -48,6 +48,23 @@ export function CommandBar() {
         ? "#e6aa3c"
         : "#8f95af";
 
+  // A workflow is "running" whenever any async step is in flight. The button
+  // below jumps back to the live workspace so the analyst can leave (browse
+  // saved memos, tweak settings) and return without losing the run.
+  const workflowRunning =
+    state.extractionStatus === "extracting" ||
+    state.understanding.kind === "loading" ||
+    state.researchState.kind === "loading" ||
+    state.llm.kind === "loading" ||
+    // hold through the research→draft handoff (armed, research done, draft not
+    // yet started) so the button doesn't blink off for a frame
+    (state.engineArmed &&
+      state.researchState.kind === "success" &&
+      state.llm.kind === "idle");
+  const goToWorkflow = (): void => {
+    void navigate("/workspace");
+  };
+
   return (
     <header
       style={{
@@ -107,25 +124,58 @@ export function CommandBar() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 12,
-            color: "#c2c7da",
-          }}
-        >
+        {workflowRunning ? (
+          <button
+            type="button"
+            onClick={goToWorkflow}
+            aria-label="Go to the running workflow"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "#c9c8ff",
+              padding: "5px 11px",
+              borderRadius: 99,
+              background: "rgba(124, 123, 255, 0.14)",
+              border: "1px solid rgba(124, 123, 255, 0.32)",
+              cursor: "pointer",
+            }}
+          >
+            <span
+              className="animate-pulse"
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "#7c7bff",
+                boxShadow: "0 0 8px rgba(124, 123, 255, 0.8)",
+              }}
+            />
+            Resume workflow
+          </button>
+        ) : (
           <span
             style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: stageDotColor,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              color: "#c2c7da",
             }}
-          />
-          {stageLabel}
-        </span>
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: stageDotColor,
+              }}
+            />
+            {stageLabel}
+          </span>
+        )}
         <Button
           size="sm"
           leadingIcon={<Plus className="w-3.5 h-3.5" />}

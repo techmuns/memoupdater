@@ -56,7 +56,7 @@ export function SavedMemoPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="max-w-[1320px] mx-auto space-y-5">
       <div className="flex items-center justify-between gap-3">
         {back}
         {saved.company && (
@@ -69,18 +69,30 @@ export function SavedMemoPage() {
           </div>
         )}
       </div>
-      <MemoReview
-        memo={saved.memo}
-        generationType={saved.generationType}
-        researchWindowLabel={saved.researchWindowLabel}
-        onDownloadResearch={saved.report ? handleDownloadResearch : undefined}
-        downloadingResearch={downloadingReport}
-      />
 
-      {/* Stage 3: the stored report powers follow-up Q&A, reusable across
-          devices without re-running research. The full report itself is a
-          download (see the memo actions above), not an inline dump. */}
-      {saved.report && <ReportQnA report={saved.report} />}
+      {/* Memo reads on the left; "Ask the research" is a sticky side panel on
+          the right so questions can be asked while reading. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_390px] gap-6 items-start">
+        <div className="min-w-0">
+          <MemoReview
+            memo={saved.memo}
+            generationType={saved.generationType}
+            researchWindowLabel={saved.researchWindowLabel}
+            onDownloadResearch={saved.report ? handleDownloadResearch : undefined}
+            downloadingResearch={downloadingReport}
+            showBody
+          />
+        </div>
+
+        {/* Stage 3: the stored report powers follow-up Q&A, reusable across
+            devices without re-running research. The full report itself is a
+            download (see the memo actions above), not an inline dump. */}
+        {saved.report && (
+          <div className="lg:sticky lg:top-2">
+            <ReportQnA report={saved.report} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

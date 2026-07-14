@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
+  CheckCircle2,
   FileSearch,
   Loader2,
   RefreshCw,
@@ -21,13 +22,14 @@ import { downloadResearchPdf } from "../lib/researchPdf";
 
 // Three acts: Drop → Watch the engine work → Read & Ask. One click runs the
 // whole engine (research → draft); the animated engine carries "what's
-// happening" so the screens stay clean.
+// happening" so the screens stay clean. The engine run is armed in context, so
+// leaving this page and coming back never loses a running workflow.
 export function WorkspacePage() {
   const {
     state,
     extractInitialMemo,
-    generateFullResearchReport,
     generateMemo,
+    runEngine,
     retryFailedSection,
     retryFullMemo,
     startOver,
@@ -80,40 +82,9 @@ export function WorkspacePage() {
     }
   };
 
-  // ---- the one-click engine: run research, then auto-draft the memo --------
-  const [armed, setArmed] = useState(false);
-  const chainFired = useRef(false);
-  const fileKey = state.initialFile?.id ?? null;
-  const [prevFileKey, setPrevFileKey] = useState(fileKey);
-  if (fileKey !== prevFileKey) {
-    setPrevFileKey(fileKey);
-    // A new memo disarms the chain; chainFired is re-armed in runEngine. (Not
-    // touching the ref here — refs must not be written during render.)
-    setArmed(false);
-  }
-
-  const runEngine = (): void => {
-    chainFired.current = false;
-    if (researchSuccess) {
-      void generateMemo(true); // research already done — go straight to drafting
-      return;
-    }
-    setArmed(true);
-    void generateFullResearchReport();
-  };
-
-  // When research succeeds under an armed run, auto-start the memo draft once.
-  useEffect(() => {
-    if (
-      armed &&
-      state.researchState.kind === "success" &&
-      state.llm.kind === "idle" &&
-      !chainFired.current
-    ) {
-      chainFired.current = true;
-      void generateMemo(true);
-    }
-  }, [armed, state.researchState.kind, state.llm.kind, generateMemo]);
+  // The one-click engine (arm + research→draft handoff) now lives in the
+  // context, so a running workflow survives navigating away and back.
+  const armed = state.engineArmed;
 
   // Auto-save the finished memo (+ its report) to the library.
   const generatedMemo = memoSuccess?.memo ?? null;
@@ -199,6 +170,36 @@ export function WorkspacePage() {
             status={state.extractionStatus}
             result={state.extraction}
           />
+
+          {/* Positive confirmation once the memo has been read + analysed. */}
+          {analysisWorking && (
+            <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3.5 py-2.5">
+              <Loader2 className="w-4 h-4 shrink-0 animate-spin text-[var(--color-ink)]" />
+              <span className="text-[12.5px] text-[var(--color-text-muted)]">
+                Reading your memo — extracting the thesis, anchors & claims…
+              </span>
+            </div>
+          )}
+          {analysisReady && state.extraction && (
+            <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-success)_35%,var(--color-border))] bg-[var(--color-success-soft)] px-3.5 py-2.5">
+              <CheckCircle2
+                className="w-4 h-4 shrink-0 mt-0.5 text-[var(--color-success)]"
+                strokeWidth={2.4}
+              />
+              <div className="min-w-0">
+                <div className="text-[12.5px] font-semibold text-[var(--color-success)]">
+                  Memo read
+                  {typeof state.extraction.wordCount === "number"
+                    ? ` — ${state.extraction.wordCount.toLocaleString()} words analysed`
+                    : " — thesis, anchors & claims analysed"}
+                </div>
+                <div className="text-[11.5px] text-[var(--color-text-muted)] mt-0.5 leading-snug">
+                  We've read the original memo and know what it covered. Run the
+                  engine to research and draft the follow-up.
+                </div>
+              </div>
+            </div>
+          )}
 
           {dnaReady && (
             <div>
@@ -300,37 +301,45 @@ export function WorkspacePage() {
         </div>
       )}
 
-      {/* ================= ACT 3 · READ & ASK ================= */}
+      {/* ================= ACT 3 · READ & ASK =================
+          The follow-up memo reads on the left; "Ask the research" is a sticky
+          side panel on the right so questions can be asked while reading. */}
       {act === "read" && memoSuccess && (
-        <div className="max-w-[1040px] mx-auto space-y-6">
-          <MemoReview
-            memo={memoSuccess.memo}
-            generationType="openai"
-            researchWindowLabel={researchWindowLabel}
-            onDownloadResearch={
-              state.fullReport.kind === "success"
-                ? handleDownloadResearch
-                : undefined
-            }
-            downloadingResearch={downloadingReport}
-          />
+        <div className="max-w-[1320px] mx-auto space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_390px] gap-6 items-start">
+            <div className="min-w-0 space-y-5">
+              <MemoReview
+                memo={memoSuccess.memo}
+                generationType="openai"
+                researchWindowLabel={researchWindowLabel}
+                onDownloadResearch={
+                  state.fullReport.kind === "success"
+                    ? handleDownloadResearch
+                    : undefined
+                }
+                downloadingResearch={downloadingReport}
+                showBody
+              />
+              <div className="flex justify-start pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={startOver}
+                  leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}
+                >
+                  Run another memo
+                </Button>
+              </div>
+            </div>
 
-          {state.fullReport.kind === "success" && (
-            <ReportQnA
-              report={state.fullReport.report}
-              memoContext={state.extraction?.text?.trim() || undefined}
-            />
-          )}
-
-          <div className="flex justify-center pt-1">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={startOver}
-              leadingIcon={<RefreshCw className="w-3.5 h-3.5" />}
-            >
-              Run another memo
-            </Button>
+            {state.fullReport.kind === "success" && (
+              <div className="lg:sticky lg:top-2">
+                <ReportQnA
+                  report={state.fullReport.report}
+                  memoContext={state.extraction?.text?.trim() || undefined}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
