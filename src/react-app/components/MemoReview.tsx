@@ -213,11 +213,6 @@ function MemoSectionBlock({
             {SIGNAL_LABEL[section.signal]}
           </Badge>
         )}
-        {section.confidence && (
-          <Badge tone={CONFIDENCE_TONE[section.confidence]}>
-            {CONFIDENCE_LABEL[section.confidence]}
-          </Badge>
-        )}
       </div>
 
       {section.summary && section.summary !== section.body && (
@@ -255,32 +250,6 @@ function MemoSectionBlock({
           ))}
         </ul>
       )}
-
-      {section.confidenceNote && (
-        <p className="mt-3 text-[11.5px] italic text-[var(--color-text-subtle)]">
-          {section.confidenceNote}
-        </p>
-      )}
-
-      {section.sources.length > 0 && (
-        <ul className="mt-3 space-y-1 border-l-2 border-[var(--color-border)] pl-3">
-          {section.sources.map((src, i) => (
-            <li
-              key={`${src.documentId}-${i}`}
-              className="text-[11px] text-[var(--color-text-muted)] leading-snug inline-flex items-start gap-1.5"
-            >
-              <FileText className="w-3 h-3 mt-0.5 shrink-0" />
-              <span>
-                <span className="font-medium text-[var(--color-text)]">
-                  {humanSourceLabel(src.documentId, i)}
-                </span>
-                {src.page && <> · p.{src.page}</>}
-                {src.quote && <> — "{src.quote}"</>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
     </section>
   );
 }
@@ -314,7 +283,7 @@ function BridgeTable({
                 {row.metric}
               </td>
               <td
-                className="px-3 py-2 text-[var(--color-text-muted)] align-top"
+                className="px-3 py-2 text-[var(--color-text)] align-top"
                 style={{ fontFamily: "var(--font-serif)" }}
               >
                 {row.original || "—"}
@@ -326,7 +295,7 @@ function BridgeTable({
                 {row.latest || "—"}
               </td>
               <td
-                className="px-3 py-2 text-[var(--color-text-muted)] italic align-top"
+                className="px-3 py-2 text-[var(--color-text)] italic align-top"
                 style={{ fontFamily: "var(--font-serif)" }}
               >
                 {row.readThrough || "—"}

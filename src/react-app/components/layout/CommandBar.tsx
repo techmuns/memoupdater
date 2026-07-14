@@ -1,18 +1,26 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { FolderClock, Plus, Settings as SettingsIcon } from "lucide-react";
+import {
+  FolderClock,
+  Moon,
+  Plus,
+  Settings as SettingsIcon,
+  Sun,
+} from "lucide-react";
 import { Button } from "../ui/Button";
 import { useMemoProject } from "../../state/MemoProjectContext";
 import { useSavedMemos } from "../../lib/useSavedMemos";
+import { useTheme } from "../../lib/theme";
 import { deriveCommandBarValues } from "./commandBarState";
 
-// Dark command strip: sticky 48px header that blends into the engine-world
-// ground (no separate white bar). Left = product mark + title + active ticker
-// pill (shown ONLY when a company is selected). Right = stage indicator +
-// New Memo + Settings. No charts/tables/large descriptions live here.
+// Command strip: sticky 48px header that blends into the shell ground (no
+// separate bar). Left = product mark + title + active ticker pill (shown ONLY
+// when a company is selected). Right = stage indicator + theme toggle +
+// New Memo + Settings. Theme-aware via CSS tokens (see index.css).
 export function CommandBar() {
   const navigate = useNavigate();
   const { state, startOver } = useMemoProject();
   const savedMemos = useSavedMemos();
+  const [theme, setTheme] = useTheme();
 
   // "New Memo" clears the current project and returns to the workbench, so the
   // analyst always starts from a clean slate. Completed memos are auto-saved
@@ -43,10 +51,10 @@ export function CommandBar() {
   const company = state.selectedCompany;
   const stageDotColor =
     stageTone === "success"
-      ? "#37d3a6"
+      ? "var(--color-success)"
       : stageTone === "warning"
-        ? "#e6aa3c"
-        : "#8f95af";
+        ? "var(--color-warning)"
+        : "var(--color-text-subtle)";
 
   // A workflow is "running" whenever any async step is in flight. The button
   // below jumps back to the live workspace so the analyst can leave (browse
@@ -76,10 +84,10 @@ export function CommandBar() {
         justifyContent: "space-between",
         padding: "0 24px",
         height: 48,
-        background: "rgba(10, 12, 19, 0.72)",
+        background: "var(--bar-bg)",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
-        borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+        borderBottom: "1px solid var(--bar-border)",
         flexShrink: 0,
       }}
     >
@@ -110,7 +118,7 @@ export function CommandBar() {
             style={{
               fontSize: 15,
               fontWeight: 700,
-              color: "#eaecf4",
+              color: "var(--color-text)",
               margin: 0,
               letterSpacing: "-0.01em",
             }}
@@ -135,11 +143,12 @@ export function CommandBar() {
               gap: 7,
               fontSize: 12,
               fontWeight: 600,
-              color: "#c9c8ff",
+              color: "var(--color-ink)",
               padding: "5px 11px",
               borderRadius: 99,
-              background: "rgba(124, 123, 255, 0.14)",
-              border: "1px solid rgba(124, 123, 255, 0.32)",
+              background: "var(--color-ink-soft)",
+              border:
+                "1px solid color-mix(in srgb, var(--color-ink) 32%, transparent)",
               cursor: "pointer",
             }}
           >
@@ -149,8 +158,9 @@ export function CommandBar() {
                 width: 7,
                 height: 7,
                 borderRadius: "50%",
-                background: "#7c7bff",
-                boxShadow: "0 0 8px rgba(124, 123, 255, 0.8)",
+                background: "var(--color-ink)",
+                boxShadow:
+                  "0 0 8px color-mix(in srgb, var(--color-ink) 70%, transparent)",
               }}
             />
             Resume workflow
@@ -162,7 +172,7 @@ export function CommandBar() {
               alignItems: "center",
               gap: 6,
               fontSize: 12,
-              color: "#c2c7da",
+              color: "var(--color-text-muted)",
             }}
           >
             <span
@@ -176,6 +186,21 @@ export function CommandBar() {
             {stageLabel}
           </span>
         )}
+        <button
+          type="button"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          aria-label={
+            theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
+          }
+          title={theme === "dark" ? "Light theme" : "Dark theme"}
+          className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-md)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-muted)] transition-colors"
+        >
+          {theme === "dark" ? (
+            <Sun className="w-4 h-4" />
+          ) : (
+            <Moon className="w-4 h-4" />
+          )}
+        </button>
         <Button
           size="sm"
           leadingIcon={<Plus className="w-3.5 h-3.5" />}
@@ -230,12 +255,13 @@ function TickerPill({ ticker, company }: { ticker: string; company?: string }) {
         alignItems: "center",
         gap: 6,
         padding: "2px 10px",
-        background: "rgba(124, 123, 255, 0.14)",
-        color: "#b8b7ff",
+        background: "var(--color-ink-soft)",
+        color: "var(--color-ink)",
         borderRadius: 99,
         fontSize: 12,
         fontWeight: 600,
-        border: "1px solid rgba(124, 123, 255, 0.28)",
+        border:
+          "1px solid color-mix(in srgb, var(--color-ink) 28%, transparent)",
         maxWidth: 260,
       }}
     >
@@ -243,9 +269,8 @@ function TickerPill({ ticker, company }: { ticker: string; company?: string }) {
         style={{
           width: 6,
           height: 6,
-          background: "#7c7bff",
+          background: "var(--color-ink)",
           borderRadius: "50%",
-          boxShadow: "0 0 8px rgba(124, 123, 255, 0.7)",
           flexShrink: 0,
         }}
       />
@@ -253,7 +278,7 @@ function TickerPill({ ticker, company }: { ticker: string; company?: string }) {
       {company && (
         <span
           style={{
-            color: "#8f8ee0",
+            color: "var(--color-text-muted)",
             fontWeight: 400,
             overflow: "hidden",
             textOverflow: "ellipsis",

@@ -75,6 +75,77 @@
     "Liberation Mono", "Courier New", monospace;
 }
 
+/* App-chrome vars that aren't Tailwind design tokens: the shell backdrop and
+   the command-bar glass. Dark is the default (matches @theme above); the
+   light-theme block below overrides both these and the color tokens. */
+:root {
+  --app-bg:
+    radial-gradient(120vmax 90vmax at 50% -30%, #141936 0%, transparent 55%),
+    radial-gradient(80vmax 60vmax at 92% 118%, #0f1a2b 0%, transparent 52%),
+    var(--color-bg);
+  --bar-bg: rgba(10, 12, 19, 0.72);
+  --bar-border: rgba(255, 255, 255, 0.06);
+}
+
+/* ===== Light theme ========================================================
+   Applied when <html data-theme="light">. Overrides the color tokens (the
+   utilities all read var(--color-*), so they re-resolve automatically) plus
+   the app-chrome vars. The research engine (.rengine) keeps its own dark
+   world regardless — a radar scope belongs on dark. */
+:root[data-theme="light"] {
+  --color-paper: #f9fafb;
+  --color-bg: #f6f7fb;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f4f5f8;
+  --color-surface-sunken: #eef0f4;
+
+  --color-border: #e3e6ec;
+  --color-border-strong: #cbd0da;
+  --color-border-ink: #111827;
+
+  --color-text: #111827;
+  --color-text-muted: #4a5163;
+  --color-text-subtle: #6b7280;
+  --color-text-inverse: #ffffff;
+
+  --color-mark: color-mix(in srgb, #4f46e5 22%, transparent);
+
+  --color-ink: #4f46e5;
+  --color-ink-hover: #4338ca;
+  --color-ink-soft: #eef2ff;
+  --color-ink-foreground: #ffffff;
+
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-soft: #eef2ff;
+
+  --color-signal-up: #15803d;
+  --color-signal-up-soft: #dcfce7;
+  --color-signal-down: #dc2626;
+  --color-signal-down-soft: #fee2e2;
+  --color-signal-flat: #6b7280;
+  --color-signal-flat-soft: #f3f4f6;
+
+  --color-warning: #b45309;
+  --color-warning-soft: #fef3c7;
+  --color-success: #15803d;
+  --color-success-soft: #dcfce7;
+
+  --shadow-hairline: 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.03);
+  --shadow-md:
+    0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-panel:
+    0 1px 2px rgba(15, 23, 42, 0.05), 0 12px 32px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  --app-bg:
+    radial-gradient(120vmax 80vmax at 50% -20%, #e9ecff 0%, transparent 60%),
+    var(--color-bg);
+  --bar-bg: rgba(255, 255, 255, 0.85);
+  --bar-border: rgba(15, 23, 42, 0.08);
+}
+
 html,
 body,
 #root {
@@ -147,9 +218,9 @@ body {
 .shimmer {
   background-image: linear-gradient(
     90deg,
-    #171b29 0%,
-    #232838 50%,
-    #171b29 100%
+    var(--color-surface-muted) 0%,
+    var(--color-border) 50%,
+    var(--color-surface-muted) 100%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;

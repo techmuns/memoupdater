@@ -19,10 +19,7 @@ export function AppShell({ children }: AppShellProps) {
         flexDirection: "column",
         height: "100vh",
         overflow: "hidden",
-        background:
-          "radial-gradient(120vmax 90vmax at 50% -30%, #141936 0%, transparent 55%)," +
-          "radial-gradient(80vmax 60vmax at 92% 118%, #0f1a2b 0%, transparent 52%)," +
-          "var(--color-bg)",
+        background: "var(--app-bg)",
       }}
     >
       <CommandBar />
