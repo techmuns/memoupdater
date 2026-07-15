@@ -94,6 +94,16 @@ export interface FinancialBridgeRow {
   readThrough?: string;
 }
 
+// The follow-up memo's primary output unit: a 3-column comparison row that
+// contrasts what the ORIGINAL memo said on a point (originalThesis) with the
+// latest reality (latest) and explains what changed and why (whatChanged).
+// Each row is self-contained — originalThesis names its own subject.
+export interface MemoComparisonRow {
+  originalThesis: string;
+  latest: string;
+  whatChanged: string;
+}
+
 export interface MemoSection {
   id: string;
   title: string;
@@ -105,6 +115,10 @@ export interface MemoSection {
   confidenceNote?: string;
   confidence?: MemoConfidence;
   bridge?: FinancialBridgeRow[];
+  // The new memo format: each section is primarily a 3-column comparison
+  // table (original thesis | latest | what changed & why). Optional so
+  // previously-saved memos (prose/bridge only) still render via the fallback.
+  comparison?: MemoComparisonRow[];
 }
 
 export interface FollowUpMemo {

@@ -44,6 +44,19 @@ export const MEMO_SECTION_TOOL_SCHEMA: object = {
     },
     confidenceNote: { type: "string" },
     confidence: { type: "string", enum: CONFIDENCE_VALUES },
+    comparison: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["originalThesis", "latest", "whatChanged"],
+        properties: {
+          originalThesis: { type: "string" },
+          latest: { type: "string" },
+          whatChanged: { type: "string" },
+        },
+      },
+    },
     bridge: {
       type: "array",
       items: {
@@ -77,6 +90,7 @@ export const MEMO_SECTION_OPENAI_SCHEMA: object = {
     "sources",
     "confidenceNote",
     "confidence",
+    "comparison",
     "bridge",
   ],
   properties: {
@@ -104,6 +118,19 @@ export const MEMO_SECTION_OPENAI_SCHEMA: object = {
       type: ["string", "null"],
       enum: [...CONFIDENCE_VALUES, null],
     },
+    comparison: {
+      type: ["array", "null"],
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["originalThesis", "latest", "whatChanged"],
+        properties: {
+          originalThesis: { type: "string" },
+          latest: { type: "string" },
+          whatChanged: { type: "string" },
+        },
+      },
+    },
     bridge: {
       type: ["array", "null"],
       items: {
@@ -126,6 +153,7 @@ export function normalizeSectionNulls(input: unknown): unknown {
   const out: Record<string, unknown> = { ...input };
   if (out.confidenceNote === null) delete out.confidenceNote;
   if (out.confidence === null) delete out.confidence;
+  if (out.comparison === null) delete out.comparison;
   if (out.bridge === null) delete out.bridge;
   if (Array.isArray(out.bridge)) {
     out.bridge = out.bridge.map((row) => {

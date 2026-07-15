@@ -34,6 +34,16 @@ const SHARED_SYSTEM_LINES = [
   "You are a buy-side analyst writing a tight follow-up update to an existing investment thesis.",
   "Mirror the original uploaded memo's voice. If the memo is plain-English and concise, you are plain-English and concise. If it uses domain shorthand, use the SAME shorthand — never introduce jargon the original memo did not.",
   "",
+  "OUTPUT FORMAT (HARD — this OVERRIDES any per-section formatting guidance below):",
+  "- The PRIMARY deliverable of every section is a `comparison` table with EXACTLY three columns, one row per point:",
+  "    • originalThesis — what the ORIGINAL memo said, assumed, or anchored on for this point. Name the subject inside the cell so the row stands alone (e.g. 'Stock price: Rs 670 on 7 May 2024', 'EBITDA margin: ~23% expected', 'M&A optionality: ~Rs 1,000 cr cash'). If the memo never stated it, write 'not in memo'.",
+  "    • latest — the latest reality / development for that same point, with the sourced number + as-of date where available (e.g. 'Rs 952 (as of 2026-07-14)', '18.5% reported FY26'). If nothing is surfaced, write 'not surfaced'.",
+  "    • whatChanged — what changed and WHY, in one short factual phrase (e.g. 'Re-rated; return came from multiple, not EPS', 'Margin missed the memo ask by ~4.5 pp'). No recommendation.",
+  "- `comparison` is REQUIRED for every core (sec_*) section: 3–6 rows. Each row must compare the SAME point across the three columns. Do not put a value in `latest` that doesn't correspond to the `originalThesis` in the same row.",
+  "- The per-section blocks below tell you WHICH points to compare (price, margins, ownership, events, etc.) — route that content into `comparison` rows, NOT into long prose.",
+  "- `summary` = ONE plain-English lead line for the section (≤ 150 chars). `body` and `bullets` are now OPTIONAL and should be used sparingly (0–2 short bullets) only for a point that genuinely doesn't fit the 3-column grid. Never duplicate a comparison row as a bullet.",
+  "- The legacy 4-column `bridge` is DEPRECATED for core sections — use `comparison` instead. (Supplementary sup_* panels may still use `bridge`.)",
+  "",
   "PAGE-BUDGET DISCIPLINE — the entire follow-up memo must fit under THREE pages combined across the core (sec_*) sections. Treat the length ceilings below as HARD limits. Tighter is always better than fuller.",
   "",
   "Default length ceilings (HARD):",
@@ -512,11 +522,24 @@ function buildUserPrompt(req: GenerateMemoSectionRequest): string {
   lines.push(
     `- Emit EXACTLY ONE MemoSection JSON object with id="${sectionId}", title="${CANONICAL_SECTION_TITLES[sectionId]}".`,
   );
+  const isCore = sectionId.startsWith("sec_");
   lines.push(
-    "- Required fields: id, title, summary, body, bullets, signal, sources.",
+    "- Required fields: id, title, summary, signal, sources.",
   );
+  if (isCore) {
+    lines.push(
+      "- REQUIRED for this core section: `comparison` — 3–6 rows of { originalThesis, latest, whatChanged }, each row comparing ONE point (see OUTPUT FORMAT). This is the section's main content.",
+    );
+    lines.push(
+      "- `body` and `bullets` are OPTIONAL here — keep them empty or to ≤ 2 short lines for anything that truly doesn't fit the table. Do NOT emit a `bridge` for a core section.",
+    );
+  } else {
+    lines.push(
+      "- Optional fields: body, bullets, confidence, confidenceNote, bridge (rows of { metric, original?, latest?, readThrough? }).",
+    );
+  }
   lines.push(
-    "- Optional fields: confidence (high|medium|low), confidenceNote (one short sentence), bridge (rows of { metric, original?, latest?, readThrough? }).",
+    "- Optional everywhere: confidence (high|medium|low), confidenceNote (one short sentence).",
   );
   lines.push(
     "- For each source, include documentId (required) plus optional page and quote.",

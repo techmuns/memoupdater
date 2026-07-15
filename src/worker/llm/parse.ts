@@ -4,6 +4,7 @@ import type {
   FollowUpMemo,
   GenerateFollowUpMemoRequest,
   LlmGenerationWarning,
+  MemoComparisonRow,
   MemoConfidence,
   MemoSection,
   MemoSectionSignal,
@@ -265,6 +266,25 @@ function parseConfidence(value: unknown): MemoConfidence | undefined {
   return undefined;
 }
 
+// The new 3-column comparison table. A row needs at least an originalThesis or
+// a latest to be meaningful; missing cells become an empty string so the table
+// still renders a clean grid.
+function parseComparison(value: unknown): MemoComparisonRow[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const rows: MemoComparisonRow[] = [];
+  for (const item of value) {
+    if (!isPlainObject(item)) continue;
+    const originalThesis =
+      typeof item.originalThesis === "string" ? item.originalThesis.trim() : "";
+    const latest = typeof item.latest === "string" ? item.latest.trim() : "";
+    const whatChanged =
+      typeof item.whatChanged === "string" ? item.whatChanged.trim() : "";
+    if (!originalThesis && !latest && !whatChanged) continue;
+    rows.push({ originalThesis, latest, whatChanged });
+  }
+  return rows.length > 0 ? rows : undefined;
+}
+
 function parseBridge(value: unknown): FinancialBridgeRow[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const rows: FinancialBridgeRow[] = [];
@@ -337,6 +357,8 @@ export function parseSectionJson(
   }
   const confidence = parseConfidence(input.confidence);
   if (confidence) section.confidence = confidence;
+  const comparison = parseComparison(input.comparison);
+  if (comparison) section.comparison = comparison;
   const bridge = parseBridge(input.bridge);
   if (bridge) section.bridge = bridge;
   return { ok: true, section, warnings };
@@ -376,6 +398,8 @@ function parseSection(
   }
   const confidence = parseConfidence(raw.confidence);
   if (confidence) section.confidence = confidence;
+  const comparison = parseComparison(raw.comparison);
+  if (comparison) section.comparison = comparison;
   const bridge = parseBridge(raw.bridge);
   if (bridge) section.bridge = bridge;
   return { ok: true, section };

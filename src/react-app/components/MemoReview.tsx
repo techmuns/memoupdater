@@ -224,33 +224,95 @@ function MemoSectionBlock({
         </p>
       )}
 
-      {section.bridge && section.bridge.length > 0 && (
-        <BridgeTable rows={section.bridge} />
-      )}
-
-      {section.body && (
-        <p
-          className="text-[14px] text-[var(--color-text)] leading-[1.65] whitespace-pre-line"
-          style={{ fontFamily: "var(--font-sans)" }}
-        >
-          {section.body}
-        </p>
-      )}
-
-      {section.bullets && section.bullets.length > 0 && (
-        <ul className="mt-3 space-y-1.5 list-disc pl-5 marker:text-[var(--color-text-subtle)]">
-          {section.bullets.map((b, bi) => (
-            <li
-              key={bi}
-              className="text-[13.5px] text-[var(--color-text)] leading-[1.6]"
+      {/* New format: the section IS a 3-column comparison table. Older saved
+          memos have no `comparison` — those fall back to the prose/bridge. */}
+      {section.comparison && section.comparison.length > 0 ? (
+        <ComparisonTable rows={section.comparison} />
+      ) : (
+        <>
+          {section.bridge && section.bridge.length > 0 && (
+            <BridgeTable rows={section.bridge} />
+          )}
+          {section.body && (
+            <p
+              className="text-[14px] text-[var(--color-text)] leading-[1.65] whitespace-pre-line"
               style={{ fontFamily: "var(--font-sans)" }}
             >
-              {b}
-            </li>
-          ))}
-        </ul>
+              {section.body}
+            </p>
+          )}
+          {section.bullets && section.bullets.length > 0 && (
+            <ul className="mt-3 space-y-1.5 list-disc pl-5 marker:text-[var(--color-text-subtle)]">
+              {section.bullets.map((b, bi) => (
+                <li
+                  key={bi}
+                  className="text-[13.5px] text-[var(--color-text)] leading-[1.6]"
+                  style={{ fontFamily: "var(--font-sans)" }}
+                >
+                  {b}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </section>
+  );
+}
+
+// The new memo format: a 3-column comparison — Original thesis | New / latest |
+// What changed & why. One row per point; every cell reads in the sans font for
+// legibility.
+function ComparisonTable({
+  rows,
+}: {
+  rows: NonNullable<MemoSection["comparison"]>;
+}) {
+  return (
+    <div className="my-1 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)]">
+      <table className="w-full text-[13px] border-collapse">
+        <thead className="bg-[var(--color-surface-muted)]">
+          <tr className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">
+            <th className="text-left font-semibold px-3 py-2 w-[34%]">
+              Original thesis
+            </th>
+            <th className="text-left font-semibold px-3 py-2 w-[33%]">
+              New / latest
+            </th>
+            <th className="text-left font-semibold px-3 py-2 w-[33%]">
+              What changed &amp; why
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr
+              key={i}
+              className={i === 0 ? "" : "border-t border-[var(--color-border)]"}
+            >
+              <td
+                className="px-3 py-2.5 font-medium text-[var(--color-text)] align-top leading-[1.5]"
+                style={{ fontFamily: "var(--font-sans)" }}
+              >
+                {row.originalThesis || "—"}
+              </td>
+              <td
+                className="px-3 py-2.5 text-[var(--color-text)] align-top leading-[1.5]"
+                style={{ fontFamily: "var(--font-sans)" }}
+              >
+                {row.latest || "—"}
+              </td>
+              <td
+                className="px-3 py-2.5 text-[var(--color-text)] align-top leading-[1.5]"
+                style={{ fontFamily: "var(--font-sans)" }}
+              >
+                {row.whatChanged || "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

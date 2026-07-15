@@ -1,5 +1,5 @@
 import type jsPDF from "jspdf";
-import type { FollowUpMemo, MemoSection } from "@shared/types";
+import type { FollowUpMemo, MemoComparisonRow, MemoSection } from "@shared/types";
 import { pdfSafeText } from "./pdfText";
 
 // Phase 6F.2: jsPDF + its html2canvas/dompurify transitive deps are
@@ -187,6 +187,81 @@ function drawBridge(
   ctx.y += 1.5;
 }
 
+// The new memo format: a 3-column comparison table (Original thesis | New /
+// latest | What changed & why). Same wrapping / zebra / page-break behaviour
+// as drawBridge, three equal-ish columns.
+function drawComparison(
+  ctx: DocCtx,
+  rows: MemoComparisonRow[],
+  dense: boolean,
+  scale = 1,
+): void {
+  if (rows.length === 0) return;
+  const { doc } = ctx;
+  const cellSize = (dense ? 7.5 : 8) * scale;
+  const lineGap = cellSize * 0.46;
+  const topPad = 1.8 * scale;
+  const botPad = 1.6 * scale;
+  const ascent = cellSize * 0.3;
+  const widths = [CONTENT_W * 0.34, CONTENT_W * 0.33, CONTENT_W * 0.33];
+  const xs = [
+    MARGIN_X,
+    MARGIN_X + widths[0],
+    MARGIN_X + widths[0] + widths[1],
+  ];
+
+  const cells: string[][] = [
+    ["Original thesis", "New / latest", "What changed & why"],
+    ...rows.map((r) => [
+      r.originalThesis || "—",
+      r.latest || "—",
+      r.whatChanged || "—",
+    ]),
+  ];
+  const wrapped: string[][][] = cells.map((row, ri) =>
+    row.map((cell, ci) => {
+      doc.setFont("times", ri === 0 ? "bold" : "normal");
+      doc.setFontSize(cellSize);
+      return doc.splitTextToSize(pdfSafeText(cell), widths[ci] - 2.4) as string[];
+    }),
+  );
+  const heights = wrapped.map((row) => {
+    const maxLines = Math.max(...row.map((cell) => cell.length));
+    return topPad + maxLines * lineGap + botPad;
+  });
+  ensureRoom(ctx, heights[0] + (heights[1] ?? 0));
+
+  for (let ri = 0; ri < wrapped.length; ri++) {
+    const row = wrapped[ri];
+    const h = heights[ri];
+    ensureRoom(ctx, h);
+    const rowTop = ctx.y;
+    if (ri === 0) {
+      doc.setFillColor(238, 242, 255);
+      doc.rect(MARGIN_X, rowTop, CONTENT_W, h, "F");
+    } else if (ri % 2 === 0) {
+      doc.setFillColor(249, 250, 251);
+      doc.rect(MARGIN_X, rowTop, CONTENT_W, h, "F");
+    }
+    for (let ci = 0; ci < row.length; ci++) {
+      doc.setFont("times", ri === 0 ? "bold" : "normal");
+      doc.setFontSize(cellSize);
+      if (ri === 0) doc.setTextColor(67, 56, 202);
+      else if (ci === 0) doc.setTextColor(17, 24, 39);
+      else doc.setTextColor(40, 46, 56);
+      const lines = row[ci];
+      for (let li = 0; li < lines.length; li++) {
+        doc.text(lines[li], xs[ci] + 1.4, rowTop + topPad + ascent + li * lineGap);
+      }
+    }
+    doc.setLineWidth(0.2);
+    doc.setDrawColor(229, 231, 235);
+    doc.line(MARGIN_X, rowTop + h, PAGE_W - MARGIN_X, rowTop + h);
+    ctx.y = rowTop + h;
+  }
+  ctx.y += 1.5;
+}
+
 // The valuation bridge and the memo-vs-actual financials are the two
 // supplementary panels a follow-up memo must show IN PRINT (a PM reads them
 // first). They are promoted into the 3-page PDF in COMPACT form — heading +
@@ -217,6 +292,14 @@ function bridgeCharCount(s: MemoSection): number {
   return n;
 }
 
+function comparisonCharCount(rows: MemoComparisonRow[] | undefined): number {
+  let n = 0;
+  for (const r of rows ?? []) {
+    n += r.originalThesis.length + r.latest.length + r.whatChanged.length;
+  }
+  return n;
+}
+
 function visibleCharCount(memo: FollowUpMemo, panels: MemoSection[]): number {
   let n = memo.title.length;
   for (const s of memo.sections) {
@@ -224,6 +307,7 @@ function visibleCharCount(memo: FollowUpMemo, panels: MemoSection[]): number {
     n += (s.body ?? "").length;
     for (const b of s.bullets ?? []) n += b.length;
     n += bridgeCharCount({ ...s, summary: undefined });
+    n += comparisonCharCount(s.comparison);
   }
   for (const p of panels) n += bridgeCharCount(p);
   for (const m of memo.manualChecksRemaining ?? []) n += m.length;
@@ -467,6 +551,15 @@ function renderSection(
     });
     ctx.y += (dense ? 1.4 : 1.8) * scale;
   }
+
+  // New format: the section IS a 3-column comparison table. Older memos with
+  // no `comparison` fall back to the legacy bridge + prose + bullets.
+  if (s.comparison && s.comparison.length > 0) {
+    drawComparison(ctx, s.comparison, dense, scale);
+    ctx.y += (dense ? 1.2 : 1.6) * scale;
+    return;
+  }
+
   if (s.bridge && s.bridge.length > 0) {
     drawBridge(ctx, s.bridge, dense, scale);
     ctx.y += (dense ? 1.2 : 1.6) * scale;
