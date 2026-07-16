@@ -7,17 +7,21 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { SavedMemoPage } from "./pages/SavedMemoPage";
 import { useMunshotHost } from "./state/MunshotHostContext";
 import { useHostContext } from "./hooks/useHostContext";
+import { useOrgSync } from "./lib/orgSync";
 import { disableMemoSync, enableMemoSync } from "./lib/memoSync";
 import { useSyncId } from "./lib/syncId";
 
-// Turn on cross-device memo sync. A manually-set sync id (Settings) wins so the
-// analyst can guarantee the SAME identity on every device; otherwise we use the
+// Turn on cross-device memo sync. When the host hands us a session token, the
+// library is scoped to the ORGANIZATION id from the JWT (locked). Without a
+// token, a manually-set sync id (Settings) is used, falling back to the
 // host-provided user id / email. With no identity anywhere, the library stays
 // local-only and the UI explains why.
 function useMemoLibrarySync(): void {
   const { host } = useMunshotHost();
+  const { orgId } = useOrgSync();
   const manualId = useSyncId();
-  const identity = manualId || host?.user?.id || host?.user?.email || null;
+  const identity =
+    orgId || manualId || host?.user?.id || host?.user?.email || null;
   useEffect(() => {
     if (identity) void enableMemoSync(identity);
     else disableMemoSync("no_identity");
@@ -28,25 +32,15 @@ function App() {
   useMemoLibrarySync();
 
   // Host session (JWT) from the Munshot parent window, via the single SDK
-  // client. The host owns identity — we only READ the token here.
+  // client. The host owns identity — we only READ the token here. The app runs
+  // with OR without a token (no token → editable sync id in Settings), so we
+  // don't gate the UI on it; we just log it once for handshake confirmation.
   const { session } = useHostContext();
 
   useEffect(() => {
     if (!session.token) return;
     console.info("[dashboard] token:", session.token);
   }, [session.token]);
-
-  // token === null on first render is TRANSIENT while the host:init handshake
-  // completes. Show a small inline notice — never an error/redirect/retry. When
-  // served standalone (outside the Munshot host) the token stays null and this
-  // notice persists, which is expected.
-  if (!session.token) {
-    return (
-      <div className="h-screen grid place-items-center text-[13px] text-[var(--color-text-muted)]">
-        Waiting for session…
-      </div>
-    );
-  }
 
   return (
     <AppShell>
