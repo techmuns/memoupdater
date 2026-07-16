@@ -27,4 +27,12 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Shipped Munshot SDK adapter — written verbatim to match the vendor
+    // bundle's `any`-typed message surface. Not ours to retype.
+    files: ["src/react-app/lib/sdk.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
 );
