@@ -1,11 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import {
-  FolderClock,
-  Moon,
-  Plus,
-  Settings as SettingsIcon,
-  Sun,
-} from "lucide-react";
+import { FolderClock, Moon, Plus, Sun } from "lucide-react";
 import { Button } from "../ui/Button";
 import { useMemoProject } from "../../state/MemoProjectContext";
 import { useSavedMemos } from "../../lib/useSavedMemos";
@@ -226,20 +220,6 @@ export function CommandBar() {
               {savedMemos.length}
             </span>
           )}
-        </NavLink>
-        <NavLink
-          to="/settings"
-          aria-label="Settings"
-          className={({ isActive }) =>
-            `inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] font-medium rounded-[var(--radius-md)] transition-colors ${
-              isActive
-                ? "bg-[var(--color-ink-soft)] text-[var(--color-ink)] font-semibold"
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
-            }`
-          }
-        >
-          <SettingsIcon className="w-4 h-4" />
-          <span className="hidden sm:inline">Settings</span>
         </NavLink>
       </div>
     </header>
