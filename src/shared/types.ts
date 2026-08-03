@@ -301,7 +301,7 @@ export interface FollowUpMemoGenerationResult {
 
 // ---------- Phase 4A additions: LLM follow-up memo generation ----------
 
-export type LlmProviderName = "anthropic" | "openai" | "none";
+export type LlmProviderName = "anthropic" | "openai" | "bedrock" | "none";
 
 export interface LlmProviderMetadata {
   providerName: LlmProviderName;
@@ -310,7 +310,11 @@ export interface LlmProviderMetadata {
   outputTokens?: number;
 }
 
-export type ApiKeySource = "LLM_API_KEY" | "OPENAI_API_KEY" | "none";
+export type ApiKeySource =
+  | "LLM_API_KEY"
+  | "OPENAI_API_KEY"
+  | "TEMP_CLAUDE_TOKEN"
+  | "none";
 
 export interface LlmStatusResponse {
   llmEnabled: boolean;

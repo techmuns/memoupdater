@@ -5,6 +5,11 @@
 # ANTHROPIC_API_KEY=
 # OPENAI_API_KEY=
 #
+# AWS Bedrock bearer API key, only used when LLM_PROVIDER="bedrock"
+# (see src/worker/llm/bedrock.ts). BEDROCK_REGION defaults to us-east-1.
+# temp_claude_token=
+# BEDROCK_REGION=
+#
 # Bearer token for the company-picker stock search (POST /api/stock/search,
 # proxies devde.muns.io). Without it the picker reports "not configured".
 # MUNS_ACCESS_TOKEN=

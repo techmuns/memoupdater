@@ -2,8 +2,9 @@ import type { LlmProvider } from "./types";
 import type { ApiKeySource, LlmProviderName } from "@shared/types";
 import { createAnthropicProvider } from "./anthropic";
 import { createOpenAIProvider } from "./openai";
+import { createBedrockProvider, DEFAULT_BEDROCK_REGION } from "./bedrock";
 
-const SUPPORTED_PROVIDERS = ["openai", "anthropic"] as const;
+const SUPPORTED_PROVIDERS = ["openai", "anthropic", "bedrock"] as const;
 type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
 function asSupportedProvider(value: string | undefined): SupportedProvider | undefined {
@@ -21,6 +22,11 @@ interface LlmEnv {
   LLM_MODEL?: string;
   LLM_API_KEY?: string;
   OPENAI_API_KEY?: string;
+  // Bedrock/Claude path (LLM_PROVIDER="bedrock"). See ./bedrock.ts.
+  // temp_claude_token is the Cloudflare Worker secret name used for the
+  // Bedrock bearer API key; BEDROCK_REGION overrides the default region.
+  temp_claude_token?: string;
+  BEDROCK_REGION?: string;
   LLM_GATE_ENABLED?: string;
   LLM_GATE_SECRET?: string;
 }
@@ -47,6 +53,16 @@ function resolveApiKey(e: LlmEnv): {
   ) {
     return { key: e.OPENAI_API_KEY, source: "OPENAI_API_KEY" };
   }
+  // Bedrock ignores this fallback too, except for its own dedicated
+  // secret name (the Cloudflare Worker secret set by the automated
+  // provisioning step is named temp_claude_token, not LLM_API_KEY).
+  if (
+    e.LLM_PROVIDER === "bedrock" &&
+    e.temp_claude_token &&
+    e.temp_claude_token.length > 0
+  ) {
+    return { key: e.temp_claude_token, source: "TEMP_CLAUDE_TOKEN" };
+  }
   return { key: undefined, source: "none" };
 }
 
@@ -58,6 +74,8 @@ const WARNING_GATE_NO_SECRET =
   "LLM gate is enabled but no gate secret is configured.";
 const WARNING_API_KEY_FALLBACK =
   "Using OPENAI_API_KEY fallback; consider renaming the secret to LLM_API_KEY for clarity.";
+const WARNING_TEMP_CLAUDE_TOKEN_FALLBACK =
+  "Using temp_claude_token fallback; consider renaming the secret to LLM_API_KEY for clarity.";
 
 export interface LlmReadiness {
   llmEnabled: boolean;
@@ -106,6 +124,9 @@ export function evaluateLlmReadiness(env: Env): LlmReadiness {
   }
   if (resolved.source === "OPENAI_API_KEY") {
     warnings.push(WARNING_API_KEY_FALLBACK);
+  }
+  if (resolved.source === "TEMP_CLAUDE_TOKEN") {
+    warnings.push(WARNING_TEMP_CLAUDE_TOKEN_FALLBACK);
   }
 
   return {
@@ -194,6 +215,14 @@ export function getProvider(env: Env): LlmProvider | null {
       return createOpenAIProvider(resolved.key, model);
     case "anthropic":
       return createAnthropicProvider(resolved.key, model);
+    case "bedrock":
+      return createBedrockProvider(
+        resolved.key,
+        model,
+        e.BEDROCK_REGION && e.BEDROCK_REGION.length > 0
+          ? e.BEDROCK_REGION
+          : DEFAULT_BEDROCK_REGION,
+      );
   }
 }
 
